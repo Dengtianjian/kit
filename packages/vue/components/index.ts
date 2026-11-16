@@ -26,7 +26,7 @@ export { default as Upload } from "./Base/Upload/Upload.vue";
 /* ----------------------------------- Naive UI ----------------------------------- */
 
 /** 双栏布局：左侧路由菜单 + 右侧内容，栏宽可配 */
-export { default as NativeTwoColumnLayout } from "./Naive/Layout/NativeTwoColumnLayout.vue";
+export { default as NaiveTwoColumnLayout } from "./Naive/Layout/NaiveTwoColumnLayout.vue";
 /** 全局 naive-ui 配置：主题覆盖 + dialog / message provider */
 export { default as NaiveConfig } from "./Naive/NaiveConfig.vue";
 /** `n-form-item` 的封装：统一 feedback 插槽 */
@@ -39,8 +39,6 @@ export { default as NaiveProvider } from "./Naive/NaiveProvider.vue";
 export { default as NaiveRouterMenu } from "./Naive/NaiveRouterMenu.vue";
 /** 路由驱动的 tabs */
 export { default as NaiveRouterTabs } from "./Naive/NaiveRouterTabs.vue";
-/** 居中的分页条 */
-export { default as NativeCenterPagination } from "./Naive/NativeCenterPagination.vue";
 /** 居中的分页条 */
 export { default as NaiveCenterPagination } from "./Naive/NaiveCenterPagination.vue";
 export { default as NaiveUpload } from "./Naive/NaiveUpload.vue";
