@@ -1,0 +1,378 @@
+/**
+ * K UI 默认主题：CSS 变量表达式图。
+ * 规格 = docs site /vue/ui/design/theme-tokens.md（本文件是 §10.3「表达式形态产物」的手工真相源，零构建）。
+ *
+ * 修改规则（验收时逐条核对）：
+ *  - 组件样式只消费 Alias 层与部件变量，不直接引用 Seed/Base；
+ *  - 颜色派生只允许 color-mix(in oklab, …) / light-dark(…) / 变量引用，表达式嵌套 ≤ 3 层（§4.0）；
+ *  - 颜色 token 禁止 @property 注册（会把计算值钉死在声明处，破坏子树亮暗切换）；
+ *  - 暗色零新增公式：只换 Mix 基线与 seed-dark（§7）；
+ *  - 平台差异只进 §8.2 封闭清单，组件内禁止平台判断。
+ */
+
+/* 模式基准只声明在 :root：color-scheme 的强制翻转（[data-k-theme] 或宿主 .dark 同步）都发生在根，
+   Provider 容器若重抄 `light dark` 会把子树 used scheme 拉回「跟随系统」，
+   站点强开暗色 + 系统亮色时整棵 scope 按亮档解析（--k-mix-down=#000 → 暗色按压变压暗）。
+   scheme=auto = 不声明、继承根的生效值；显式 light/dark 走 [data-k-theme] 属性块（下方）。 */
+:root {
+  color-scheme: light dark;
+}
+
+:root,
+.k-config-provider {
+  /* ============================================================ Seed（§2，唯一输入面） */
+  --k-seed-color-primary: #1677ff;
+  --k-seed-color-success: #52c41a;
+  --k-seed-color-warning: #faad14;
+  --k-seed-color-error: #ff4d4f;
+  /* info / link 未设则跟随主色（CSS 级联实现） */
+  --k-seed-color-info: var(--k-seed-color-primary);
+  --k-seed-color-link: var(--k-seed-color-primary);
+  --k-seed-color-text-base: #000000;
+  --k-seed-color-text-base-dark: #f5f5f5;
+  --k-seed-color-bg-base: #ffffff;
+  --k-seed-color-bg-base-dark: #141414;
+  --k-seed-font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --k-seed-font-family-code: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --k-seed-font-size: 14;
+  --k-seed-line-height: 1.5714;
+  --k-seed-border-radius: 6;
+  --k-seed-line-width: 1;
+  --k-seed-size-unit: 4;
+  --k-seed-size-step: 4;
+  --k-seed-control-height: 32;
+  --k-seed-motion-unit: 0.1;
+  --k-seed-z-index-popup-base: 1000;
+  --k-seed-neutral-tint: 0.04;
+
+  /* ============================================================ Base：模式基线（§4.0/§7） */
+  --k-color-text-base: light-dark(var(--k-seed-color-text-base), var(--k-seed-color-text-base-dark));
+  --k-color-bg-base: light-dark(var(--k-seed-color-bg-base), var(--k-seed-color-bg-base-dark));
+  --k-mix-onto: var(--k-color-bg-base); /* 淡出方向：融进背景，两模式自动正确 */
+  --k-mix-up: #ffffff; /* 提亮方向：hover 恒提亮 */
+  --k-mix-down: light-dark(#000000, #ffffff); /* 压暗方向：暗色下改为提亮 */
+}
+
+/* ============================================================ Map：语义色基准 + 状态色组（§4.1，全模式同式） */
+:root,
+.k-config-provider {
+  --k-color-primary: light-dark(var(--k-seed-color-primary), color-mix(in oklab, var(--k-seed-color-primary) 92%, #ffffff));
+  --k-color-success: light-dark(var(--k-seed-color-success), color-mix(in oklab, var(--k-seed-color-success) 92%, #ffffff));
+  --k-color-warning: light-dark(var(--k-seed-color-warning), color-mix(in oklab, var(--k-seed-color-warning) 92%, #ffffff));
+  --k-color-error: light-dark(var(--k-seed-color-error), color-mix(in oklab, var(--k-seed-color-error) 92%, #ffffff));
+  --k-color-info: light-dark(var(--k-seed-color-info), color-mix(in oklab, var(--k-seed-color-info) 92%, #ffffff));
+  --k-color-link: light-dark(var(--k-seed-color-link), color-mix(in oklab, var(--k-seed-color-link) 92%, #ffffff));
+}
+
+/* N ∈ {primary, success, warning, error, info, link}，c = var(--k-color-N)：
+   hover 提亮 10% | active 压暗 25%（按压观感校准 2026-11-17） | bg/border/text 系淡出到背景 */
+:root,
+.k-config-provider {
+  --k-color-primary-hover: color-mix(in oklab, var(--k-color-primary) 90%, var(--k-mix-up));
+  --k-color-primary-active: color-mix(in oklab, var(--k-color-primary) 75%, var(--k-mix-down));
+  --k-color-primary-bg: color-mix(in oklab, var(--k-color-primary) 10%, var(--k-mix-onto));
+  --k-color-primary-bg-hover: color-mix(in oklab, var(--k-color-primary) 16%, var(--k-mix-onto));
+  --k-color-primary-border: color-mix(in oklab, var(--k-color-primary) 30%, var(--k-mix-onto));
+  --k-color-primary-border-hover: color-mix(in oklab, var(--k-color-primary) 45%, var(--k-mix-onto));
+  --k-color-primary-text: color-mix(in oklab, var(--k-color-primary) 90%, var(--k-mix-onto));
+  --k-color-primary-text-hover: color-mix(in oklab, var(--k-color-primary) 75%, var(--k-mix-onto));
+  --k-color-primary-text-active: color-mix(in oklab, var(--k-color-primary) 92%, var(--k-mix-down));
+  /* text-strong：白底彩字过 WCAG 4.5 的深档（R4b 校准 2026-11-17：light 压黑 10%，暗档 c 本身已提亮直接沿用） */
+  --k-color-primary-text-strong: light-dark(color-mix(in oklab, var(--k-color-primary) 90%, #000000), var(--k-color-primary));
+
+  --k-color-success-hover: color-mix(in oklab, var(--k-color-success) 90%, var(--k-mix-up));
+  --k-color-success-active: color-mix(in oklab, var(--k-color-success) 75%, var(--k-mix-down));
+  --k-color-success-bg: color-mix(in oklab, var(--k-color-success) 10%, var(--k-mix-onto));
+  --k-color-success-bg-hover: color-mix(in oklab, var(--k-color-success) 16%, var(--k-mix-onto));
+  --k-color-success-border: color-mix(in oklab, var(--k-color-success) 30%, var(--k-mix-onto));
+  --k-color-success-border-hover: color-mix(in oklab, var(--k-color-success) 45%, var(--k-mix-onto));
+  --k-color-success-text: color-mix(in oklab, var(--k-color-success) 90%, var(--k-mix-onto));
+  --k-color-success-text-hover: color-mix(in oklab, var(--k-color-success) 75%, var(--k-mix-onto));
+  --k-color-success-text-active: color-mix(in oklab, var(--k-color-success) 92%, var(--k-mix-down));
+  --k-color-success-text-strong: light-dark(color-mix(in oklab, var(--k-color-success) 70%, #000000), var(--k-color-success));
+
+  --k-color-warning-hover: color-mix(in oklab, var(--k-color-warning) 90%, var(--k-mix-up));
+  --k-color-warning-active: color-mix(in oklab, var(--k-color-warning) 75%, var(--k-mix-down));
+  --k-color-warning-bg: color-mix(in oklab, var(--k-color-warning) 10%, var(--k-mix-onto));
+  --k-color-warning-bg-hover: color-mix(in oklab, var(--k-color-warning) 16%, var(--k-mix-onto));
+  --k-color-warning-border: color-mix(in oklab, var(--k-color-warning) 30%, var(--k-mix-onto));
+  --k-color-warning-border-hover: color-mix(in oklab, var(--k-color-warning) 45%, var(--k-mix-onto));
+  --k-color-warning-text: color-mix(in oklab, var(--k-color-warning) 90%, var(--k-mix-onto));
+  --k-color-warning-text-hover: color-mix(in oklab, var(--k-color-warning) 75%, var(--k-mix-onto));
+  --k-color-warning-text-active: color-mix(in oklab, var(--k-color-warning) 92%, var(--k-mix-down));
+  --k-color-warning-text-strong: light-dark(color-mix(in oklab, var(--k-color-warning) 65%, #000000), var(--k-color-warning));
+
+  --k-color-error-hover: color-mix(in oklab, var(--k-color-error) 90%, var(--k-mix-up));
+  --k-color-error-active: color-mix(in oklab, var(--k-color-error) 75%, var(--k-mix-down));
+  --k-color-error-bg: color-mix(in oklab, var(--k-color-error) 10%, var(--k-mix-onto));
+  --k-color-error-bg-hover: color-mix(in oklab, var(--k-color-error) 16%, var(--k-mix-onto));
+  --k-color-error-border: color-mix(in oklab, var(--k-color-error) 30%, var(--k-mix-onto));
+  --k-color-error-border-hover: color-mix(in oklab, var(--k-color-error) 45%, var(--k-mix-onto));
+  --k-color-error-text: color-mix(in oklab, var(--k-color-error) 90%, var(--k-mix-onto));
+  --k-color-error-text-hover: color-mix(in oklab, var(--k-color-error) 75%, var(--k-mix-onto));
+  --k-color-error-text-active: color-mix(in oklab, var(--k-color-error) 92%, var(--k-mix-down));
+  --k-color-error-text-strong: light-dark(color-mix(in oklab, var(--k-color-error) 80%, #000000), var(--k-color-error));
+
+  --k-color-info-hover: color-mix(in oklab, var(--k-color-info) 90%, var(--k-mix-up));
+  --k-color-info-active: color-mix(in oklab, var(--k-color-info) 75%, var(--k-mix-down));
+  --k-color-info-bg: color-mix(in oklab, var(--k-color-info) 10%, var(--k-mix-onto));
+  --k-color-info-bg-hover: color-mix(in oklab, var(--k-color-info) 16%, var(--k-mix-onto));
+  --k-color-info-border: color-mix(in oklab, var(--k-color-info) 30%, var(--k-mix-onto));
+  --k-color-info-border-hover: color-mix(in oklab, var(--k-color-info) 45%, var(--k-mix-onto));
+  --k-color-info-text: color-mix(in oklab, var(--k-color-info) 90%, var(--k-mix-onto));
+  --k-color-info-text-hover: color-mix(in oklab, var(--k-color-info) 75%, var(--k-mix-onto));
+  --k-color-info-text-active: color-mix(in oklab, var(--k-color-info) 92%, var(--k-mix-down));
+  --k-color-info-text-strong: light-dark(color-mix(in oklab, var(--k-color-info) 90%, #000000), var(--k-color-info));
+
+  --k-color-link-hover: color-mix(in oklab, var(--k-color-link) 90%, var(--k-mix-up));
+  --k-color-link-active: color-mix(in oklab, var(--k-color-link) 75%, var(--k-mix-down));
+  --k-color-link-bg: color-mix(in oklab, var(--k-color-link) 10%, var(--k-mix-onto));
+  --k-color-link-bg-hover: color-mix(in oklab, var(--k-color-link) 16%, var(--k-mix-onto));
+  --k-color-link-border: color-mix(in oklab, var(--k-color-link) 30%, var(--k-mix-onto));
+  --k-color-link-border-hover: color-mix(in oklab, var(--k-color-link) 45%, var(--k-mix-onto));
+  --k-color-link-text: color-mix(in oklab, var(--k-color-link) 90%, var(--k-mix-onto));
+  --k-color-link-text-hover: color-mix(in oklab, var(--k-color-link) 75%, var(--k-mix-onto));
+  --k-color-link-text-active: color-mix(in oklab, var(--k-color-link) 92%, var(--k-mix-down));
+  --k-color-link-text-strong: light-dark(color-mix(in oklab, var(--k-color-link) 90%, #000000), var(--k-color-link));
+
+  /* danger 语义位：组件 type=danger 消费 error 组，此处仅留别名方便直读 */
+  --k-color-danger: var(--k-color-error);
+}
+
+/* ============================================================ Alias：透明通道组（§4.2） */
+:root,
+.k-config-provider {
+  --k-color-text: color-mix(in oklab, var(--k-color-text-base), transparent 12%);
+  --k-color-text-secondary: color-mix(in oklab, var(--k-color-text-base), transparent 35%);
+  --k-color-text-tertiary: color-mix(in oklab, var(--k-color-text-base), transparent 55%);
+  --k-color-text-quaternary: color-mix(in oklab, var(--k-color-text-base), transparent 75%);
+  --k-color-text-light-solid: #ffffff;
+
+  --k-color-fill: color-mix(in oklab, var(--k-color-text-base), transparent 85%);
+  --k-color-fill-secondary: color-mix(in oklab, var(--k-color-text-base), transparent 94%);
+  --k-color-fill-tertiary: color-mix(in oklab, var(--k-color-text-base), transparent 96%);
+  --k-color-fill-quaternary: color-mix(in oklab, var(--k-color-text-base), transparent 98%);
+
+  /* 遮罩/聚焦底：dark 下 α 上调一档（§7 补充规则） */
+  --k-color-bg-mask: light-dark(
+    color-mix(in oklab, #000000, transparent 45%),
+    color-mix(in oklab, #000000, transparent 40%)
+  );
+  --k-color-bg-spotlight: color-mix(in oklab, var(--k-color-text-base), transparent 15%);
+}
+
+/* ============================================================ Alias：Tinted Neutral（§4.3） */
+:root,
+.k-config-provider {
+  /* 灰阶 = text-base → bg-base 阶梯混合，dark 随两端 seed 自动翻转 */
+  --k-gray-1: color-mix(in oklab, var(--k-color-text-base) 3%, var(--k-color-bg-base));
+  --k-gray-2: color-mix(in oklab, var(--k-color-text-base) 5%, var(--k-color-bg-base));
+  --k-gray-3: color-mix(in oklab, var(--k-color-text-base) 7%, var(--k-color-bg-base));
+  --k-gray-4: color-mix(in oklab, var(--k-color-text-base) 15%, var(--k-color-bg-base));
+  --k-gray-5: color-mix(in oklab, var(--k-color-text-base) 26%, var(--k-color-bg-base));
+  --k-gray-6: color-mix(in oklab, var(--k-color-text-base) 43%, var(--k-color-bg-base));
+  --k-gray-7: color-mix(in oklab, var(--k-color-text-base) 63%, var(--k-color-bg-base));
+  --k-gray-8: color-mix(in oklab, var(--k-color-text-base) 73%, var(--k-color-bg-base));
+  --k-gray-9: color-mix(in oklab, var(--k-color-text-base) 85%, var(--k-color-bg-base));
+  --k-gray-10: color-mix(in oklab, var(--k-color-text-base) 92%, var(--k-color-bg-base));
+
+  --k-neutral-tint: var(--k-seed-neutral-tint);
+  --k-neutral-1: color-mix(in oklab, var(--k-color-primary) calc(var(--k-neutral-tint) * 100%), var(--k-gray-1));
+  --k-neutral-2: color-mix(in oklab, var(--k-color-primary) calc(var(--k-neutral-tint) * 100%), var(--k-gray-2));
+  --k-neutral-3: color-mix(in oklab, var(--k-color-primary) calc(var(--k-neutral-tint) * 100%), var(--k-gray-3));
+  --k-neutral-4: color-mix(in oklab, var(--k-color-primary) calc(var(--k-neutral-tint) * 100%), var(--k-gray-4));
+  --k-neutral-5: color-mix(in oklab, var(--k-color-primary) calc(var(--k-neutral-tint) * 100%), var(--k-gray-5));
+  --k-neutral-6: color-mix(in oklab, var(--k-color-primary) calc(var(--k-neutral-tint) * 100%), var(--k-gray-6));
+  --k-neutral-7: color-mix(in oklab, var(--k-color-primary) calc(var(--k-neutral-tint) * 100%), var(--k-gray-7));
+  --k-neutral-8: color-mix(in oklab, var(--k-color-primary) calc(var(--k-neutral-tint) * 100%), var(--k-gray-8));
+  --k-neutral-9: color-mix(in oklab, var(--k-color-primary) calc(var(--k-neutral-tint) * 100%), var(--k-gray-9));
+  --k-neutral-10: color-mix(in oklab, var(--k-color-primary) calc(var(--k-neutral-tint) * 100%), var(--k-gray-10));
+}
+
+/* ============================================================ Alias：背景 / 边框 / 阴影 / 光晕 */
+:root,
+.k-config-provider {
+  --k-color-bg-container: var(--k-color-bg-base);
+  --k-color-bg-elevated: light-dark(#ffffff, color-mix(in oklab, #ffffff 6%, var(--k-seed-color-bg-base-dark)));
+  --k-color-bg-layout: var(--k-neutral-2);
+  --k-color-bg-hover: var(--k-color-fill-quaternary);
+
+  --k-color-border: var(--k-neutral-4);
+  --k-color-border-secondary: var(--k-neutral-3);
+  /* 分割线独立取值 α0.08（2026-11-17 二次调参：0.06 淡、0.15 重，取中间破格档；不并入 fill ladder） */
+  --k-color-split: color-mix(in oklab, var(--k-color-text-base), transparent 92%);
+
+  /* 阴影三档 = 视觉规则 §6（antd 三层模板） */
+  --k-box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+  --k-box-shadow-secondary:
+    0 1px 2px -2px rgba(0, 0, 0, 0.16),
+    0 3px 6px 0 rgba(0, 0, 0, 0.12),
+    0 5px 12px 4px rgba(0, 0, 0, 0.09);
+  --k-box-shadow-tertiary:
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+
+  /* 主色光晕（§4.4） */
+  --k-control-outline-width: 2px;
+  --k-control-outline: color-mix(in oklab, var(--k-color-primary), transparent 85%);
+  --k-box-shadow-primary: 0 0 0 var(--k-control-outline-width) color-mix(in oklab, var(--k-color-primary), transparent 84%);
+}
+
+/* ============================================================ Alias：字体（§5.1） */
+:root,
+.k-config-provider {
+  --k-font-family: var(--k-seed-font-family);
+  --k-font-family-code: var(--k-seed-font-family-code);
+  --k-font-size-sm: calc(var(--k-seed-font-size) * 1px - 2px);
+  --k-font-size: calc(var(--k-seed-font-size) * 1px);
+  --k-font-size-lg: calc(var(--k-seed-font-size) * 1px + 2px);
+  --k-font-size-xl: calc(var(--k-seed-font-size) * 1px + 6px);
+  --k-line-height: var(--k-seed-line-height);
+  --k-font-height: calc(var(--k-seed-font-size) * var(--k-seed-line-height) * 1px);
+  /* 字重只有 400/500/600 三档（视觉规则 §3） */
+  --k-font-weight-base: 400;
+  --k-font-weight-strong: 500;
+  --k-font-weight-heading: 600;
+
+  --k-font-size-heading-1: calc(var(--k-seed-font-size) * 2.714 * 1px);
+  --k-font-size-heading-2: calc(var(--k-seed-font-size) * 2.142 * 1px);
+  --k-font-size-heading-3: calc(var(--k-seed-font-size) * 1.714 * 1px);
+  --k-font-size-heading-4: calc(var(--k-seed-font-size) * 1.428 * 1px);
+  --k-font-size-heading-5: calc(var(--k-seed-font-size) * 1.142 * 1px);
+  --k-font-size-heading-6: calc(var(--k-seed-font-size) * 1px);
+  --k-line-height-heading-1: 1.25;
+  --k-line-height-heading-2: 1.25;
+  --k-line-height-heading-3: 1.25;
+  --k-line-height-heading-4: 1.35;
+  --k-line-height-heading-5: 1.35;
+  --k-line-height-heading-6: 1.35;
+}
+
+/* ============================================================ Alias：圆角 / 间距 / 控件高（§5.2–5.4） */
+:root,
+.k-config-provider {
+  --k-border-radius-none: 0px;
+  --k-border-radius-xs: max(2px, calc(var(--k-seed-border-radius) * 0.5 * 1px));
+  --k-border-radius-sm: max(2px, calc(var(--k-seed-border-radius) * 0.75 * 1px));
+  --k-border-radius: calc(var(--k-seed-border-radius) * 1px);
+  --k-border-radius-lg: calc(var(--k-seed-border-radius) * 2 * 1px);
+  --k-border-radius-xl: calc(var(--k-seed-border-radius) * 3 * 1px);
+  --k-border-radius-full: 999px;
+
+  /* step = sizeUnit × sizeStep / 4 = 4px */
+  --k-size-step: calc(var(--k-seed-size-unit) * var(--k-seed-size-step) / 4 * 1px);
+  --k-size-xxs: var(--k-size-step);
+  --k-size-xs: calc(var(--k-size-step) * 2);
+  --k-size-sm: calc(var(--k-size-step) * 3);
+  --k-size: calc(var(--k-size-step) * 4);
+  --k-size-md: calc(var(--k-size-step) * 5);
+  --k-size-lg: calc(var(--k-size-step) * 6);
+  --k-size-xl: calc(var(--k-size-step) * 8);
+  --k-size-xxl: calc(var(--k-size-step) * 12);
+
+  --k-padding-xxs: var(--k-size-xxs);
+  --k-padding-xs: var(--k-size-xs);
+  --k-padding-sm: var(--k-size-sm);
+  --k-padding: var(--k-size);
+  --k-padding-md: var(--k-size-md);
+  --k-padding-lg: var(--k-size-lg);
+  --k-padding-xl: var(--k-size-xl);
+  --k-padding-xxl: var(--k-size-xxl);
+  /* 15px：与 height 差 1px 描边对齐，8 网格破格项（button 规格） */
+  --k-padding-horizontal: calc(var(--k-size) - var(--k-seed-line-width) * 1px);
+
+  --k-margin-xxs: var(--k-size-xxs);
+  --k-margin-xs: var(--k-size-xs);
+  --k-margin-sm: var(--k-size-sm);
+  --k-margin: var(--k-size);
+  --k-margin-md: var(--k-size-md);
+  --k-margin-lg: var(--k-size-lg);
+  --k-margin-xl: var(--k-size-xl);
+  --k-margin-xxl: var(--k-size-xxl);
+
+  --k-control-height-xs: max(20px, calc(var(--k-seed-control-height) * 1px - 8px));
+  --k-control-height-sm: max(24px, calc(var(--k-seed-control-height) * 1px - 4px));
+  --k-control-height: calc(var(--k-seed-control-height) * 1px);
+  --k-control-height-lg: calc(var(--k-seed-control-height) * 1px + 8px);
+
+  --k-line-width: calc(var(--k-seed-line-width) * 1px);
+  --k-line-type: solid;
+}
+
+/* ============================================================ Alias：动效 / zIndex / 图标尺寸 / 断点（§5.5、§8.1） */
+:root,
+.k-config-provider {
+  --k-motion-duration-fast: max(0.1s, calc(var(--k-seed-motion-unit) * 1s));
+  --k-motion-duration-mid: max(0.2s, calc(var(--k-seed-motion-unit) * 2s));
+  --k-motion-duration-slow: max(0.3s, calc(var(--k-seed-motion-unit) * 3s));
+  --k-motion-duration-spin: 1s; /* loading 旋转（antd loadingCircle / naive 同为 1s linear） */
+  --k-motion-duration-wave: 0.6s; /* 点击波纹（2026-11-17 调参：用户「太快」，由 antd 同值 0.4s 放慢到 0.6s） */
+  --k-motion-ease-wave: cubic-bezier(0.08, 0.82, 0.16, 1);
+  --k-motion-ease-in-out-cubic: cubic-bezier(0.645, 0.045, 0.355, 1);
+  /* out/in-cubic（antd motion 同名曲线）：2026-11-17 补登——tooltip/popover/popconfirm/modal/message/notification
+     进场动画一直引用这两个未定义令牌，var 未定义致整条 animation 失效（静默无动画） */
+  --k-motion-ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --k-motion-ease-in-cubic: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+  --k-motion-ease-out-quint: cubic-bezier(0.23, 1, 0.32, 1);
+  --k-motion-ease-in-quint: cubic-bezier(0.755, 0.05, 0.855, 0.06);
+  --k-motion-ease-out-back: cubic-bezier(0.12, 0.4, 0.29, 1.46);
+  --k-motion-ease-out: var(--k-motion-ease-out-quint);
+
+  --k-z-index-base: 0;
+  --k-z-index-divider: 1;
+  --k-z-index-segment: 2;
+  --k-z-index-affix: 10;
+  --k-z-index-popup-base: var(--k-seed-z-index-popup-base);
+  --k-z-index-dropdown: calc(var(--k-z-index-popup-base) + 100);
+  --k-z-index-sticky: calc(var(--k-z-index-popup-base) + 200);
+  --k-z-index-mask: calc(var(--k-z-index-popup-base) + 300);
+  --k-z-index-modal: calc(var(--k-z-index-popup-base) + 400);
+  --k-z-index-drawer: calc(var(--k-z-index-popup-base) + 400);
+  --k-z-index-popover: calc(var(--k-z-index-popup-base) + 500);
+  --k-z-index-message: calc(var(--k-z-index-popup-base) + 910);
+  --k-z-index-notification: calc(var(--k-z-index-popup-base) + 990);
+
+  /* 图标尺寸四档 = 14/16/24/32，锚定既有阶梯 */
+  --k-size-icon-xs: var(--k-font-size);
+  --k-size-icon-sm: var(--k-size);
+  --k-size-icon-md: var(--k-size-lg);
+  --k-size-icon-lg: var(--k-size-xl);
+
+  --k-screen-sm: 576px;
+  --k-screen-md: 768px;
+  --k-screen-lg: 992px;
+  --k-screen-xl: 1200px;
+  --k-screen-xxl: 1600px;
+  --k-size-popup-base: 520px;
+
+  /* 刘海屏安全区（§8.2，双端均可消费） */
+  --k-padding-safe-top: env(safe-area-inset-top, 0px);
+  --k-padding-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --k-padding-safe-left: env(safe-area-inset-left, 0px);
+  --k-padding-safe-right: env(safe-area-inset-right, 0px);
+
+  /* 输入基准字号：mobile 下 16px 防 iOS 聚焦缩放（§8.2） */
+  --k-input-font-size: var(--k-font-size);
+}
+
+/* ============================================================ Dark 开关（§7：翻一个属性，零覆盖块） */
+[data-k-theme="light"] { color-scheme: light; }
+[data-k-theme="dark"] { color-scheme: dark; }
+
+/* ============================================================ mobile 覆盖组（§8.2 封闭清单） */
+@media (max-width: 767px) {
+  :root,
+  .k-config-provider {
+    --k-seed-control-height: 44; /* 阶梯自动派生 xs36/sm40/lg52 */
+    --k-seed-border-radius: 8;
+    --k-padding: var(--k-size-sm); /* 16→12 */
+    --k-padding-lg: var(--k-size); /* 24→16 */
+    --k-input-font-size: 16px;
+    --k-motion-duration-mid: 0.3s;
+    --k-size-popup-base: min(94vw, 680px);
+  }
+}

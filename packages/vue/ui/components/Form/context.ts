@@ -1,0 +1,31 @@
+import type { InjectionKey, Ref } from 'vue';
+
+/**
+ * FormItem → 表单控件的注入契约（对标 antd Form.Item 的克隆传参，Vue 侧走 provide/inject）：
+ * 控件消费 status 兜底（prop > 这里 > undefined），并在 blur/改变时回调触发字段校验。
+ * 独立 context 模块避免 Form↔Item↔控件 的循环 import。
+ */
+export interface FormItemContext {
+  status: Ref<'error' | 'warning' | undefined>;
+  onFieldBlur: () => void;
+  onFieldChange: () => void;
+}
+export const FORM_ITEM_KEY: InjectionKey<FormItemContext> = Symbol('k-form-item');
+
+export interface FormItemMeta {
+  name: string;
+  validate: (trigger?: 'blur' | 'change' | 'submit') => Promise<void>;
+  clearError: () => void;
+}
+
+export interface FormContext {
+  /** 数据源对象（KForm model 的 reactive 引用） */
+  model: Ref<Record<string, unknown> | undefined>;
+  /** 全表 rules：FormItem 按 name 取；字段级 rules 覆盖 */
+  rules: Ref<Record<string, unknown> | undefined>;
+  /** 标签冒号开关（antd colon），FormItem 渲染标签时消费 */
+  colon: Ref<boolean>;
+  register: (item: FormItemMeta) => void;
+  unregister: (name: string) => void;
+}
+export const FORM_KEY: InjectionKey<FormContext> = Symbol('k-form');

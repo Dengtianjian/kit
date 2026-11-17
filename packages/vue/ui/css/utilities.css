@@ -1,0 +1,22 @@
+/** 原子工具：与组件同层（未分层），靠引入顺序与 !important 竞争，业务可随时覆盖。 */
+
+.k-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k-ellipsis-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.k-tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.k-hidden {
+  display: none !important;
+}

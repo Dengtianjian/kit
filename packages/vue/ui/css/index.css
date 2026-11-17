@@ -1,0 +1,14 @@
+/**
+ * K UI 样式入口：业务在项目入口 import 一次。
+ * 主题/reset 进 @layer（业务可随时用未分层样式覆盖 token）；
+ * 组件与 utility 不分层——未分层才能赢过宿主未分层 reset
+ * （tailwind preflight、vitepress base 等对 button/a 的抹平），
+ * 覆盖组件走 部件变量 / classNames / styles，见主题 Token 规格。
+ *
+ * 也可跳过本文件只引 theme.css（自带 reset/utility 的工程）。
+ */
+@layer kui-theme, kui-base;
+
+@import './theme.css' layer(kui-theme);
+@import './reset.css' layer(kui-base);
+@import './utilities.css';

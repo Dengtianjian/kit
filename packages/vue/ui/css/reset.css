@@ -1,0 +1,25 @@
+/** 极小 reset：只归一化到主题基线，不做浏览器风格抹平（业务自带 reset 时可不引入）。 */
+@layer kui-base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--k-font-family);
+    font-size: var(--k-font-size);
+    line-height: var(--k-line-height);
+    color: var(--k-color-text);
+    background-color: var(--k-color-bg-container);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
