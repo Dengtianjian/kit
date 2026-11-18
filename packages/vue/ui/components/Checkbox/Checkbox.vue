@@ -235,4 +235,10 @@ defineExpose({ inputEl, focus: () => inputEl.value?.focus() });
   color: var(--k-color-text-quaternary);
 }
 /* 按压遮罩豁免：选择件按压语义 = 勾选，同输入族不加 hover:none 黑罩 */
+
+@media (hover: none) {
+  .k-checkbox {
+    min-height: 44px;
+  }
+}
 </style>

@@ -1071,4 +1071,10 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
   padding: var(--k-size-xs) var(--k-size-sm);
   border-top: var(--k-line-width) solid var(--k-color-split);
 }
+
+@media (hover: none) {
+  .k-datepicker__cell {
+    height: max(var(--k-datepicker-cell-h), 40px);
+  }
+}
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, useSlots } from 'vue';
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
 import { FORM_ITEM_KEY } from '../Form/context';
 import type { CSSProperties, VNodeChild } from 'vue';
 import { useCustomRender } from '../../composables/useCustomRender';
@@ -13,8 +13,16 @@ type InputStatus = 'error' | 'warning';
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
 export interface KInputRenderScope {
   size: 'xs' | 'sm' | 'md' | 'lg';
-  variant: 'outlined' | 'filled' | 'borderless';
+  variant: 'outlined' | 'filled' | 'borderless' | 'underlined';
   type: string;
+  /** textarea 形态（多行） */
+  isTextarea: boolean;
+  rows: number | undefined;
+  autosize: boolean | { minRows?: number; maxRows?: number } | undefined;
+  loading: boolean | undefined;
+  passivelyActivated: boolean | undefined;
+  /** 密码明文是否可见 */
+  passwordVisible: boolean;
   /** 合并链：prop > FormItem 校验态 */
   status: InputStatus | undefined;
   placeholder: string | undefined;
@@ -43,6 +51,8 @@ export interface KInputRenderScope {
   /** 清除动作（置空 + clear 事件 + 回焦） */
   onClear: () => void;
   focus: () => void;
+  blur: () => void;
+  select: () => void;
   slots: ReturnType<typeof useSlots>;
 }
 
@@ -50,8 +60,8 @@ interface KInputProps {
   size?: 'xs' | 'sm' | 'md' | 'lg';
   /** 校验态（KForm 下发 / 手动指定）；缺省跟随 status 语义色链 */
   status?: InputStatus;
-  variant?: 'outlined' | 'filled' | 'borderless';
-  type?: 'text' | 'password' | 'search' | 'email' | 'tel' | 'url' | 'number';
+  variant?: 'outlined' | 'filled' | 'borderless' | 'underlined';
+  type?: 'text' | 'password' | 'textarea' | 'search' | 'email' | 'tel' | 'url' | 'number';
   placeholder?: string;
   disabled?: boolean;
   readonly?: boolean;
@@ -63,6 +73,20 @@ interface KInputProps {
   autocomplete?: string;
   /** 透传原生 input[inputmode]（数字键盘等；InputNumber 消费） */
   inputmode?: string;
+  /** 透传原生 input[enterkeyhint]（移动端回车键文案：search/done/next…） */
+  enterkeyhint?: string;
+  /** 透传原生 input[autocapitalize]（移动端自动大写策略） */
+  autocapitalize?: string;
+  /** type=textarea 时的行数（未开 autosize 时生效，默认 3） */
+  rows?: number;
+  /** 文本域自适应内容高度：true 或 { minRows, maxRows } */
+  autosize?: boolean | { minRows?: number; maxRows?: number };
+  /** 加载态：后缀显示旋转图标（占位，不改变可编辑性） */
+  loading?: boolean;
+  /** 被动激活：点击外壳空白/前后缀区域也聚焦输入框 */
+  passivelyActivated?: boolean;
+  /** type=password 时显示明文切换按钮（默认显示） */
+  showPassword?: boolean;
   id?: string;
   name?: string;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
@@ -75,6 +99,8 @@ const props = withDefaults(defineProps<KInputProps>(), {
   size: 'md',
   variant: 'outlined',
   type: 'text',
+  rows: 3,
+  showPassword: true,
 });
 
 const emit = defineEmits<{
@@ -82,13 +108,29 @@ const emit = defineEmits<{
   blur: [e: FocusEvent];
   change: [e: Event];
   clear: [];
+  passwordVisibleChange: [visible: boolean];
 }>();
 
 const model = defineModel<string>({ default: '' });
 const slots = useSlots();
 
-const inputEl = ref<HTMLInputElement | null>(null);
+const inputEl = ref<HTMLInputElement | HTMLTextAreaElement | null>(null);
+const rootEl = ref<HTMLElement | null>(null);
 const focused = ref(false);
+const passwordVisible = ref(false);
+const isTextarea = computed(() => props.type === 'textarea');
+const isPassword = computed(() => props.type === 'password');
+const actualType = computed(() =>
+  isPassword.value && props.showPassword && passwordVisible.value ? 'text' : props.type,
+);
+const hasSuffix = computed(
+  () =>
+    showClear.value ||
+    props.showCount ||
+    props.loading ||
+    (isPassword.value && props.showPassword) ||
+    Boolean(slots.suffix),
+);
 
 /* KForm 联动（合并链：prop > FormItem 校验态）；blur/change 回调触发字段校验 */
 const formItem = inject(FORM_ITEM_KEY, null);
@@ -107,13 +149,14 @@ const classes = computed(() => [
     [`k-input--${effectiveStatus.value}`]: effectiveStatus.value,
     'is-disabled': props.disabled,
     'is-readonly': props.readonly,
-    'k-input--has-suffix':
-      showClear.value || props.showCount || Boolean(slots.suffix),
+    'is-loading': props.loading,
+    'k-input--textarea': isTextarea.value,
+    'k-input--has-suffix': hasSuffix.value,
   },
 ]);
 
 function onInput(e: Event) {
-  model.value = (e.target as HTMLInputElement).value;
+  model.value = (e.target as HTMLInputElement | HTMLTextAreaElement).value;
   formItem?.onFieldChange();
 }
 function onFocus(e: FocusEvent) {
@@ -133,12 +176,83 @@ function onClear() {
 function focus() {
   inputEl.value?.focus();
 }
+function blur() {
+  inputEl.value?.blur();
+}
+function select() {
+  inputEl.value?.select();
+}
+
+function autosizeOptions() {
+  const a = props.autosize;
+  if (!a || !isTextarea.value) return null;
+  if (a === true) return { minRows: 1, maxRows: Infinity };
+  return { minRows: a.minRows ?? 1, maxRows: a.maxRows ?? Infinity };
+}
+
+function resizeTextarea() {
+  const el = inputEl.value;
+  const opts = autosizeOptions();
+  if (!(el instanceof HTMLTextAreaElement) || !opts) return;
+  const cs = getComputedStyle(el);
+  const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+  const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  el.style.height = 'auto';
+  const min = line * opts.minRows + pad;
+  const max = opts.maxRows === Infinity ? Infinity : line * opts.maxRows + pad;
+  const height = Math.max(min, Math.min(max, el.scrollHeight));
+  el.style.height = `${Math.round(height)}px`;
+  el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
+}
+
+let resizeObserver: ResizeObserver | null = null;
+watch(model, () => {
+  if (!isTextarea.value) return;
+  nextTick(resizeTextarea);
+});
+watch(
+  () => [props.autosize, props.rows, props.type],
+  () => nextTick(resizeTextarea),
+);
+onMounted(() => {
+  resizeTextarea();
+  if (isTextarea.value && autosizeOptions() && typeof ResizeObserver !== 'undefined' && rootEl.value) {
+    resizeObserver = new ResizeObserver(() => resizeTextarea());
+    resizeObserver.observe(rootEl.value);
+  }
+});
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+});
+
+function togglePassword() {
+  passwordVisible.value = !passwordVisible.value;
+  emit('passwordVisibleChange', passwordVisible.value);
+  nextTick(() => {
+    const el = inputEl.value;
+    if (!el) return;
+    el.focus();
+    const end = el.value.length;
+    el.setSelectionRange?.(end, end);
+  });
+}
+
+function onRootClick(e: MouseEvent) {
+  if (!props.passivelyActivated || props.disabled) return;
+  const target = e.target as HTMLElement;
+  if (target.closest('button, a, [role="button"], input, textarea')) return;
+  focus();
+}
+
 
 const rootAttrs = { 'data-part': 'root' };
 const inputAttrs = computed(() => ({
   'data-part': 'input',
   value: model.value,
-  type: props.type,
+  type: isTextarea.value ? undefined : actualType.value,
+  rows: isTextarea.value ? (autosizeOptions()?.minRows ?? props.rows) : undefined,
+  'aria-busy': props.loading || undefined,
   placeholder: props.placeholder,
   disabled: props.disabled || undefined,
   readonly: props.readonly || undefined,
@@ -146,6 +260,8 @@ const inputAttrs = computed(() => ({
   autofocus: props.autofocus || undefined,
   autocomplete: props.autocomplete,
   inputmode: props.inputmode,
+  enterkeyhint: props.enterkeyhint,
+  autocapitalize: props.autocapitalize,
   id: props.id,
   name: props.name,
 }));
@@ -162,6 +278,12 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KInpu
     size: props.size,
     variant: props.variant,
     type: props.type,
+    isTextarea: isTextarea.value,
+    rows: props.rows,
+    autosize: props.autosize,
+    loading: props.loading,
+    passivelyActivated: props.passivelyActivated,
+    passwordVisible: passwordVisible.value,
     status: effectiveStatus.value,
     placeholder: props.placeholder,
     disabled: props.disabled,
@@ -190,7 +312,7 @@ defineSlots<{
   render?(scope: KInputRenderScope): VNodeChild;
 }>();
 
-defineExpose({ inputEl, focus });
+defineExpose({ inputEl, focus, blur, select, activate: focus, deactivate: blur });
 </script>
 
 <template>
@@ -198,11 +320,13 @@ defineExpose({ inputEl, focus });
     <slot v-if="$slots.render" name="render" v-bind="renderScope" />
     <component v-else :is="renderPropOutlet" />
   </template>
-  <span
+  <div
     v-else
+    ref="rootEl"
     :class="[classes, classNames?.root]"
     :style="styles?.root"
     v-bind="rootAttrs"
+    @click="onRootClick"
   >
     <span
       v-if="slots.prefix"
@@ -211,7 +335,17 @@ defineExpose({ inputEl, focus });
       :class="classNames?.prefix"
       :style="styles?.prefix"
     ><slot name="prefix" /></span>
+    <textarea
+      v-if="isTextarea"
+      ref="inputEl"
+      class="k-input__input"
+      :class="classNames?.input"
+      :style="[styles?.input, autosize ? { resize: 'none' } : null]"
+      v-bind="inputAttrs"
+      v-on="inputOn"
+    />
     <input
+      v-else
       ref="inputEl"
       class="k-input__input"
       :class="classNames?.input"
@@ -220,13 +354,29 @@ defineExpose({ inputEl, focus });
       v-on="inputOn"
     />
     <span
-      v-if="showClear || showCount || slots.suffix"
+      v-if="hasSuffix"
       data-part="suffix"
       class="k-input__suffix"
       :class="classNames?.suffix"
       :style="styles?.suffix"
     >
       <slot name="suffix" />
+      <span v-if="loading" class="k-input__loading" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <circle cx="8" cy="8" r="6" stroke-opacity="0.25" />
+          <path d="M14 8a6 6 0 0 0-6-6" />
+        </svg>
+      </span>
+      <span
+        v-if="isPassword && showPassword"
+        class="k-input__eye"
+        role="button"
+        :aria-label="passwordVisible ? '隐藏密码' : '显示密码'"
+        @mousedown.prevent="togglePassword"
+      >
+        <svg v-if="passwordVisible" viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8Z" /><circle cx="8" cy="8" r="1.8" /></svg>
+        <svg v-else viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2 2l12 12" /><path d="M6.3 4.2A6.6 6.6 0 0 1 8 4c4 0 6.5 4 6.5 4a12 12 0 0 1-2.2 2.6M4.2 5.6A11 11 0 0 0 1.5 8S4 12 8 12c.9 0 1.7-.2 2.4-.5" /></svg>
+      </span>
       <!-- 内建清除图标：最小 inline SVG（currentColor），不动 KIcon 注入模式；KForm 批如引入图标库依赖再统一 -->
       <span
         v-if="showClear"
@@ -244,7 +394,7 @@ defineExpose({ inputEl, focus });
         <template v-if="maxlength"> / {{ maxlength }}</template>
       </span>
     </span>
-  </span>
+  </div>
 </template>
 
 <style>
@@ -260,6 +410,7 @@ defineExpose({ inputEl, focus });
   --k-input-text-color: var(--k-color-text);
   --k-input-placeholder-color: var(--k-color-text-tertiary);
   --k-input-icon-color: var(--k-color-text-tertiary);
+  --k-input-icon-color-hover: var(--k-color-text);
   --k-input-clear-color: var(--k-color-text-quaternary);
   --k-input-clear-color-hover: var(--k-color-text-tertiary);
   --k-input-hover-border-color: var(--k-color-primary-hover);
@@ -267,10 +418,12 @@ defineExpose({ inputEl, focus });
   --k-input-outline: var(--k-control-outline);
   --k-input-outline-width: var(--k-control-outline-width);
   --k-input-count-color: var(--k-color-text-tertiary);
+  /* 前缀/输入/后缀之间的呼吸位（默认 8px，可经变量覆盖） */
+  --k-input-affix-gap: var(--k-size-xs);
 
   display: inline-flex;
   align-items: center;
-  gap: var(--k-size-xxs);
+  gap: var(--k-input-affix-gap);
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -291,6 +444,41 @@ defineExpose({ inputEl, focus });
   box-sizing: border-box;
 }
 
+.k-input--textarea {
+  align-items: stretch;
+  padding: var(--k-size-xs) var(--k-input-padding-x);
+}
+.k-input--textarea .k-input__prefix,
+.k-input--textarea .k-input__suffix {
+  align-self: center;
+}
+.k-input--textarea .k-input__input {
+  height: auto;
+  min-height: calc(var(--k-line-height) * 1em);
+  padding: 0;
+  line-height: var(--k-line-height);
+  resize: vertical;
+}
+.k-input.is-loading {
+  cursor: progress;
+}
+.k-input__loading {
+  display: inline-flex;
+  color: var(--k-input-icon-color);
+  animation: k-input-spin 0.8s linear infinite;
+}
+.k-input__eye {
+  display: inline-flex;
+  color: var(--k-input-icon-color);
+  cursor: pointer;
+  transition: color var(--k-motion-duration-fast) var(--k-motion-ease-in-out-cubic);
+}
+.k-input__eye:hover {
+  color: var(--k-input-icon-color-hover);
+}
+@keyframes k-input-spin {
+  to { transform: rotate(360deg); }
+}
 .k-input__input {
   flex: auto;
   min-width: 0;
@@ -402,6 +590,25 @@ defineExpose({ inputEl, focus });
   box-shadow: none;
 }
 
+/* underlined：仅底部边框，hover/focus 只变底线颜色，不出聚焦圈 */
+.k-input--underlined {
+  --k-input-bg: transparent;
+  border-width: 0 0 var(--k-input-border-width);
+  border-color: var(--k-color-border);
+  border-radius: 0;
+}
+.k-input--underlined:not(.is-disabled):hover {
+  border-bottom-color: var(--k-color-primary-hover);
+}
+.k-input--underlined:focus-within:not(.is-disabled) {
+  border-bottom-color: var(--k-color-primary);
+  box-shadow: none;
+}
+.k-input--underlined.is-disabled {
+  --k-input-bg: transparent;
+  border-color: var(--k-color-border);
+}
+
 /* ---------- disabled / readonly ---------- */
 .k-input.is-disabled {
   --k-input-bg: var(--k-color-fill-tertiary);
@@ -423,4 +630,12 @@ defineExpose({ inputEl, focus });
 .k-input--lg { --k-input-height: var(--k-control-height-lg); --k-input-padding-x: var(--k-size-md); }
 
 /* 按压遮罩豁免：输入族不套 Button 的 hover:none 黑 8%（表单件按压语义 = 聚焦，不是触发） */
+
+@media (hover: none) {
+  /* 触屏放大清除按钮命中区（视觉尺寸不变，负 margin 抵消占位） */
+  .k-input__clear {
+    padding: 8px;
+    margin: -8px;
+  }
+}
 </style>

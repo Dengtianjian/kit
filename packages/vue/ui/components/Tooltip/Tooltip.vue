@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, getCurrentInstance, ref, useSlots } from 'vue';
+import { computed, getCurrentInstance, onMounted, ref, useSlots } from 'vue';
 import type { CSSProperties, Ref, VNode, VNodeChild } from 'vue';
 import { usePopupHost, useOverlayPosition, usePopupDismiss } from '../../composables/usePopup';
 import { useCustomRender } from '../../composables/useCustomRender';
@@ -71,9 +71,17 @@ const slots = useSlots();
 const hasContent = computed(() => !!(props.content ?? props.title) || !!slots.default);
 const visible = computed(() => (controlled.value ? props.open && !props.disabled : innerOpen.value) && hasContent.value);
 
-const triggerList = computed<TooltipTrigger[]>(() =>
-  Array.isArray(props.trigger) ? props.trigger : [props.trigger],
-);
+/** 触屏（无 hover）默认改为点按触发，避免 hover 语义在移动端失效 */
+const triggerExplicit = 'trigger' in (getCurrentInstance()!.vnode.props ?? {});
+const coarsePointer = ref(false);
+onMounted(() => {
+  coarsePointer.value =
+    typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(hover: none)').matches;
+});
+const triggerList = computed<TooltipTrigger[]>(() => {
+  if (!triggerExplicit) return coarsePointer.value ? ['click'] : ['hover', 'focus'];
+  return Array.isArray(props.trigger) ? props.trigger : [props.trigger];
+});
 const hasHover = computed(() => triggerList.value.includes('hover'));
 const hasFocus = computed(() => triggerList.value.includes('focus'));
 const hasClick = computed(() => triggerList.value.includes('click'));

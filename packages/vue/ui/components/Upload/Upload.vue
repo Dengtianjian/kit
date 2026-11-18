@@ -165,6 +165,17 @@ const dragOverUid = ref<string | null>(null);
 const dropPos = ref<'before' | 'after' | null>(null);
 /** 列表拖拽让位距离（行高 + 行距）与上下让位集合 */
 const shiftPx = ref(0);
+/** 触屏排序：长按激活，避免与滚动冲突 */
+interface SortPointerState {
+  uid: string;
+  el: HTMLElement;
+  startX: number;
+  startY: number;
+  active: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+let sortPointer: SortPointerState | null = null;
+const sortingPointer = ref(false);
 const shiftUpUids = ref<string[]>([]);
 const shiftDownUids = ref<string[]>([]);
 const isCardWall = computed(() => props.listType === 'picture-card' || props.listType === 'picture-circle');
@@ -611,11 +622,15 @@ function onListDragOver(e: DragEvent) {
   if (!props.sortable || props.disabled || !dragUid.value || isCardWall.value) return;
   e.preventDefault();
   if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-  const ul = e.currentTarget as HTMLElement;
+  updateListSort(e.currentTarget as HTMLElement, e.clientY);
+}
+
+/** 列表落点/让位（HTML5 与触屏共用） */
+function updateListSort(ul: HTMLElement, clientY: number) {
   const lis = Array.from(ul.querySelectorAll<HTMLElement>(':scope > .k-upload__item'));
   const fromIdx = list.value.findIndex((f) => f.uid === dragUid.value);
   if (!lis.length || fromIdx < 0) return;
-  const y = e.clientY - ul.getBoundingClientRect().top + ul.scrollTop;
+  const y = clientY - ul.getBoundingClientRect().top + ul.scrollTop;
   let targetIdx = lis.length - 1;
   let before = false;
   for (let i = 0; i < lis.length; i++) {
@@ -664,6 +679,145 @@ function onListDrop(e: DragEvent) {
   resetSortDrag();
   if (toUid && position && from !== toUid) reorder(from, toUid, position);
 }
+/** 卡片墙横向落点（触屏用；HTML5 仍走逐卡片事件） */
+function updateCardSort(clientX: number) {
+  const root = rootEl.value;
+  if (!root) return;
+  const cards = Array.from(root.querySelectorAll<HTMLElement>('.k-upload__cards > .k-upload__card')).filter(
+    (card) => card.dataset.uid != null && card.dataset.uid !== dragUid.value,
+  );
+  if (!cards.length) {
+    dragOverUid.value = null;
+    dropPos.value = null;
+    return;
+  }
+  let best = cards[0];
+  let bestD = Infinity;
+  for (const card of cards) {
+    const r = card.getBoundingClientRect();
+    const d = Math.abs(clientX - (r.left + r.width / 2));
+    if (d < bestD) {
+      bestD = d;
+      best = card;
+    }
+  }
+  const rect = best.getBoundingClientRect();
+  dragOverUid.value = best.dataset.uid ?? null;
+  dropPos.value = clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+}
+
+function blockSortClick(ev: Event) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  window.removeEventListener('click', blockSortClick, true);
+}
+
+function cleanupSortPointer() {
+  window.removeEventListener('pointermove', onSortPointerMove);
+  window.removeEventListener('pointerup', onSortPointerUp);
+  window.removeEventListener('pointercancel', onSortPointerCancel);
+  window.removeEventListener('keydown', onSortPointerKey);
+  if (sortPointer?.timer) clearTimeout(sortPointer.timer);
+  sortPointer = null;
+  sortingPointer.value = false;
+  document.body.style.userSelect = '';
+  (document.body.style as unknown as Record<string, string>).webkitUserSelect = '';
+  document.body.style.touchAction = '';
+  setTimeout(() => window.removeEventListener('click', blockSortClick, true), 0);
+  resetSortDrag();
+}
+
+function activateSortPointer() {
+  if (!sortPointer) return;
+  const el = sortPointer.el;
+  const parent = el.parentElement;
+  dragUid.value = sortPointer.uid;
+  dragOverUid.value = null;
+  dropPos.value = null;
+  shiftUpUids.value = [];
+  shiftDownUids.value = [];
+  if (parent) {
+    const cs = getComputedStyle(parent);
+    const gap = isCardWall.value ? parseFloat(cs.columnGap) || 0 : parseFloat(cs.rowGap) || 0;
+    const rect = el.getBoundingClientRect();
+    shiftPx.value = (isCardWall.value ? rect.width : rect.height) + gap;
+  }
+  sortingPointer.value = true;
+  document.body.style.userSelect = 'none';
+  (document.body.style as unknown as Record<string, string>).webkitUserSelect = 'none';
+  document.body.style.touchAction = 'none';
+  window.addEventListener('click', blockSortClick, true);
+}
+
+function onSortPointerDown(file: KUploadFileItem, e: PointerEvent) {
+  if (!props.sortable || props.disabled) return;
+  if (e.pointerType === 'mouse') return; // 鼠标继续走原生 HTML5 拖拽
+  // 覆盖在项上的按钮（预览/删除/重传）不触发排序
+  if ((e.target as HTMLElement).closest('button, a, [role="button"]')) return;
+  const el = e.currentTarget as HTMLElement;
+  sortPointer = {
+    uid: file.uid,
+    el,
+    startX: e.clientX,
+    startY: e.clientY,
+    active: false,
+    timer: null,
+  };
+  window.addEventListener('pointermove', onSortPointerMove, { passive: false });
+  window.addEventListener('pointerup', onSortPointerUp);
+  window.addEventListener('pointercancel', onSortPointerCancel);
+  window.addEventListener('keydown', onSortPointerKey);
+  sortPointer.timer = setTimeout(() => {
+    if (sortPointer && !sortPointer.active) {
+      sortPointer.active = true;
+      activateSortPointer();
+    }
+  }, 250);
+}
+
+function onSortPointerMove(e: PointerEvent) {
+  if (!sortPointer) return;
+  if (!sortPointer.active) {
+    if (Math.hypot(e.clientX - sortPointer.startX, e.clientY - sortPointer.startY) > 8) {
+      if (sortPointer.timer) clearTimeout(sortPointer.timer);
+      sortPointer = null;
+      window.removeEventListener('pointermove', onSortPointerMove);
+      window.removeEventListener('pointerup', onSortPointerUp);
+      window.removeEventListener('pointercancel', onSortPointerCancel);
+      window.removeEventListener('keydown', onSortPointerKey);
+    }
+    return;
+  }
+  e.preventDefault();
+  if (!dragUid.value) return;
+  if (isCardWall.value) {
+    updateCardSort(e.clientX);
+  } else {
+    const ul = rootEl.value?.querySelector<HTMLElement>('.k-upload__list');
+    if (ul) updateListSort(ul, e.clientY);
+  }
+}
+
+function onSortPointerUp() {
+  if (!sortPointer) return;
+  const wasActive = sortPointer.active;
+  if (wasActive) {
+    const from = dragUid.value;
+    const toUid = dragOverUid.value;
+    const position = dropPos.value;
+    if (from && toUid && position && from !== toUid) reorder(from, toUid, position);
+  }
+  cleanupSortPointer();
+}
+
+function onSortPointerCancel() {
+  cleanupSortPointer();
+}
+
+function onSortPointerKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') cleanupSortPointer();
+}
+
 function reorder(fromUid: string, toUid: string, position: 'before' | 'after') {
   const cur = [...list.value];
   const fromIdx = cur.findIndex((f) => f.uid === fromUid);
@@ -696,6 +850,8 @@ const rootClasses = computed(() => [
     'is-disabled': props.disabled,
     'is-dragover': dragOver.value,
     'is-drag': props.drag,
+    'is-sortable': props.sortable,
+    'is-sort-dragging': sortingPointer.value,
   },
 ]);
 
@@ -745,6 +901,7 @@ const listDragOn: KOnPack = {
   drop: (e) => onListDrop(e as DragEvent),
 };
 const itemDragOn = (file: KUploadFileItem): KOnPack => ({
+  pointerdown: (e) => onSortPointerDown(file, e as PointerEvent),
   dragstart: (e) => onItemDragStart(file, e as DragEvent),
   dragover: (e) => onItemDragOver(file, e as DragEvent),
   dragleave: (e) => onItemDragLeave(file, e as DragEvent),
@@ -1367,6 +1524,19 @@ defineExpose({ openSelect, addFiles, upload, remove, retry, abort, preview, reor
   opacity: 0.6;
 }
 
+/* ---------- 触屏排序 ------------- */
+.k-upload.is-sortable .k-upload__item,
+.k-upload.is-sortable .k-upload__card {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.k-upload.is-sort-dragging .k-upload__item,
+.k-upload.is-sort-dragging .k-upload__card {
+  user-select: none;
+}
+
 /* ---------- 预览大图 ---------- */
 
 /* ---------- 交互动画（默认模板；headless 自管） ---------- */
@@ -1425,5 +1595,28 @@ defineExpose({ openSelect, addFiles, upload, remove, retry, abort, preview, reor
   25% { transform: translateX(-4px); }
   50% { transform: translateX(4px); }
   75% { transform: translateX(-2px); }
+}
+
+/* 触屏：无 hover，卡片操作常显为底部小按钮；列表重传按钮常显 */
+@media (hover: none) {
+  .k-upload__card-overlay {
+    opacity: 1;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: center;
+    gap: var(--k-size-xs);
+    padding-bottom: var(--k-size-xs);
+    background: linear-gradient(to top, rgb(0 0 0 / 45%), transparent 55%);
+  }
+  .k-upload__card-overlay-action {
+    width: 28px;
+    height: 28px;
+    justify-content: center;
+    border-radius: 50%;
+    background-color: rgb(0 0 0 / 55%);
+  }
+  .k-upload__replace-action {
+    display: inline-flex;
+  }
 }
 </style>

@@ -278,4 +278,28 @@ defineSlots<{
 .k-form-item__help.is-error {
   color: var(--k-form-item-error-color);
 }
+
+@media (max-width: 767px) {
+  /* 移动端：横向/内联表单改为标签在上，避免固定 100px 标签挤压控件 */
+  .k-form--horizontal .k-form-item,
+  .k-form--inline .k-form-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--k-size-xxs);
+  }
+  .k-form--horizontal .k-form-item__label,
+  .k-form--inline .k-form-item__label {
+    width: auto;
+    min-height: 0;
+    justify-content: flex-start;
+    white-space: normal;
+  }
+  .k-form--inline {
+    flex-direction: column;
+  }
+  .k-form--inline .k-form-item__control {
+    width: 100%;
+    min-width: 0;
+  }
+}
 </style>

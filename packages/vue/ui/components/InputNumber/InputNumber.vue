@@ -13,7 +13,7 @@ type NumberStatus = 'error' | 'warning';
 /** headless scope：#render 插槽 / render prop 闭包参数；文本态/数值态分离逻辑全在动作包里 */
 export interface KInputNumberRenderScope {
   size: 'xs' | 'sm' | 'md' | 'lg';
-  variant: 'outlined' | 'filled' | 'borderless';
+  variant: 'outlined' | 'filled' | 'borderless' | 'underlined';
   status: NumberStatus | undefined;
   min: number | undefined;
   max: number | undefined;
@@ -51,7 +51,7 @@ export interface KInputNumberRenderScope {
 interface KInputNumberProps {
   size?: 'xs' | 'sm' | 'md' | 'lg';
   status?: NumberStatus;
-  variant?: 'outlined' | 'filled' | 'borderless';
+  variant?: 'outlined' | 'filled' | 'borderless' | 'underlined';
   min?: number;
   max?: number;
   /** 步进，默认 1；precision 缺省跟随 step 小数位 */
@@ -340,5 +340,15 @@ defineExpose({
 /* borderless 无框时步进列不垫左边线（对齐 KInput 透明框语义） */
 .k-input-number .k-input--borderless ~ .k-input-number__step {
   border-left: none;
+}
+
+@media (hover: none) {
+  /* 触屏步进按钮纵向命中区不足：收起步进列，改用数字键盘输入（inputmode=decimal） */
+  .k-input-number__step {
+    display: none;
+  }
+  .k-input-number--controls .k-input {
+    padding-right: var(--k-input-padding-x);
+  }
 }
 </style>

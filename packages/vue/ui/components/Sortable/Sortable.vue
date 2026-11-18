@@ -13,13 +13,24 @@ interface KSortableCrossSession {
 }
 let crossSession: KSortableCrossSession | null = null;
 const crossWatchers = new Set<() => void>();
+
+/** pointer 模式的跨列表路由：窗口级 pointermove 时按坐标找同组目标实例 */
+interface SortablePointerHost {
+  owner: symbol;
+  group: string | undefined;
+  root: HTMLElement;
+  canAccept: (item: unknown) => boolean;
+  over: (x: number, y: number) => void;
+  drop: () => void;
+}
+const pointerHosts = new Set<SortablePointerHost>();
 function notifyCrossWatchers() {
   crossWatchers.forEach((fn) => fn());
 }
 </script>
 
 <script setup lang="ts" generic="T">
-import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
 import type { ComponentPublicInstance, CSSProperties, VNodeChild } from 'vue';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn, KOnPack } from '../../composables/useCustomRender';
@@ -53,8 +64,12 @@ interface KSortableProps<T> {
   showPlaceholder?: boolean;
   /** 占位块左侧内缩（px）：树形投影时按深度缩进，宽度同步收窄 */
   placeholderInset?: number;
-  /** pointer 模式：pointer 事件拖拽 + 克隆浮层跟随（dnd-kit 风格，无原生拖影，表格场景更稳） */
+  /** pointer 模式：pointer 事件拖拽 + 克隆浮层跟随（dnd-kit 风格，无原生拖影）；缺省时 rootTag 表格自动开启 */
   pointer?: boolean;
+  /** 触屏长按激活延迟（ms），期间移动超过容差则让给页面滚动 */
+  touchDelay?: number;
+  /** 触屏长按前的移动容差（px） */
+  touchTolerance?: number;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
   render?: KRenderFn<KSortableRenderScope<T>>;
   classNames?: Partial<Record<SortablePart, string>>;
@@ -69,10 +84,19 @@ const props = withDefaults(defineProps<KSortableProps<T>>(), {
   columns: 1,
   showPlaceholder: true,
   placeholderInset: 0,
-  pointer: false,
+  touchDelay: 250,
+  touchTolerance: 8,
 });
 
 const model = defineModel<T[]>('modelValue', { required: true });
+/** 合并根（table/tbody 等）默认走 pointer，避免原生拖影导致的表格行闪烁 */
+const instance = getCurrentInstance()!;
+const usePointer = computed(() => {
+  // Boolean prop 缺省会被强转 false，需看原始 vnode props 判断是否显式传入
+  const raw = instance.vnode.props ?? {};
+  if ('pointer' in raw) return raw.pointer !== false && raw.pointer !== 'false';
+  return !!props.rootTag;
+});
 
 const emit = defineEmits<{
   change: [items: T[], info: KSortableMoveInfo<T>];
@@ -128,10 +152,17 @@ interface PointerDragState {
   offsetX: number;
   offsetY: number;
   active: boolean;
+  touch: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
 }
 let pointerDrag: PointerDragState | null = null;
 let pointerOverlay: HTMLElement | null = null;
+let pointerHost: SortablePointerHost | null = null;
+let activePointerHost: SortablePointerHost | null = null;
+let pointerInsideOwn = false;
 const pointerDragging = ref(false);
+/** 键盘排序：空格/回车拾起，方向键移动，回车/空格/ Esc 结束 */
+const keyboardKey = ref<KSortableKey | null>(null);
 /** 最近一次落点插入位（dragmove 事件用） */
 const lastSlot = ref<number | null>(null);
 let dragStarted = false;
@@ -202,6 +233,44 @@ function onCrossNotify() {
 }
 crossWatchers.add(onCrossNotify);
 
+function registerPointerHost() {
+  if (!props.group || !rootEl.value || pointerHost) return;
+  const root = rootEl.value;
+  pointerHost = {
+    owner: instanceId,
+    group: props.group,
+    root,
+    canAccept: (item) => !props.disabled && (!props.canDrop || props.canDrop(item)),
+    over: (x, y) => {
+      if (!externalActive()) return;
+      if (crossSession && crossSession.group === props.group) {
+        crossSession.hoverTarget = instanceId;
+        notifyCrossWatchers();
+      }
+      lastPointer = { x, y };
+      updateFromPointer();
+      ensureAutoScroll();
+    },
+    drop: () => {
+      commitExternalDrop();
+    },
+  };
+  pointerHosts.add(pointerHost);
+}
+
+function unregisterPointerHost() {
+  if (pointerHost) {
+    pointerHosts.delete(pointerHost);
+    pointerHost = null;
+  }
+}
+
+watch(rootEl, () => {
+  unregisterPointerHost();
+  registerPointerHost();
+});
+onMounted(registerPointerHost);
+
 onMounted(() => {
   if (mergedRef.value?.$el instanceof HTMLElement) rootEl.value = mergedRef.value.$el;
 });
@@ -257,6 +326,7 @@ function captureBoxes() {
 
 function resetDrag() {
   if (pointerDrag) cleanupPointer();
+  keyboardKey.value = null;
   dragKey.value = null;
   sourceHiddenKey.value = null;
   overKey.value = null;
@@ -316,16 +386,21 @@ function autoScrollStep() {
     stopAutoScroll();
     return;
   }
-  if (root.scrollHeight <= root.clientHeight) return;
+  if (root.scrollHeight <= root.clientHeight && root.scrollWidth <= root.clientWidth) return;
   const r = root.getBoundingClientRect();
   const edge = 40;
+  let dx = 0;
   let dy = 0;
+  if (lastPointer.x < r.left + edge) dx = -Math.min(16, Math.ceil((r.left + edge - lastPointer.x) / 2));
+  else if (lastPointer.x > r.right - edge) dx = Math.min(16, Math.ceil((lastPointer.x - (r.right - edge)) / 2));
   if (lastPointer.y < r.top + edge) dy = -Math.min(16, Math.ceil((r.top + edge - lastPointer.y) / 2));
   else if (lastPointer.y > r.bottom - edge) dy = Math.min(16, Math.ceil((lastPointer.y - (r.bottom - edge)) / 2));
-  if (!dy) return;
-  const before = root.scrollTop;
-  root.scrollTop = before + dy;
-  if (root.scrollTop !== before) {
+  if (!dx && !dy) return;
+  const beforeX = root.scrollLeft;
+  const beforeY = root.scrollTop;
+  root.scrollLeft = beforeX + dx;
+  root.scrollTop = beforeY + dy;
+  if (root.scrollLeft !== beforeX || root.scrollTop !== beforeY) {
     markScrolling();
     captureBoxes();
     updateFromPointer();
@@ -392,6 +467,14 @@ function endDrag() {
 }
 
 /* ---------- pointer 模式（dnd-kit 风格：无原生拖影，克隆浮层跟随） ---------- */
+function clearLocalPreview() {
+  overKey.value = null;
+  dropPos.value = null;
+  placeholder.value = null;
+  shifts.value = new Map();
+  tailPad.value = 0;
+}
+
 function createPointerOverlay(src: HTMLElement): HTMLElement {
   const rect = src.getBoundingClientRect();
   const clone = src.cloneNode(true) as HTMLElement;
@@ -470,11 +553,16 @@ function cleanupPointer() {
   window.removeEventListener('pointerup', onPointerUp);
   window.removeEventListener('pointercancel', onPointerCancel);
   window.removeEventListener('keydown', onPointerKey);
+  if (pointerDrag?.timer) clearTimeout(pointerDrag.timer);
   removePointerOverlay();
   pointerDrag = null;
   pointerDragging.value = false;
+  activePointerHost = null;
+  pointerInsideOwn = false;
   dragStarted = false;
   document.body.style.userSelect = '';
+  (document.body.style as unknown as Record<string, string>).webkitUserSelect = '';
+  document.body.style.touchAction = '';
   // 拖拽结束后的那次 click 仍需吞掉（链接不跳转）；等本轮事件派发完再解绑
   setTimeout(() => window.removeEventListener('click', blockNextClick, true), 0);
 }
@@ -485,30 +573,73 @@ function blockNextClick(ev: Event) {
   window.removeEventListener('click', blockNextClick, true);
 }
 
+function cancelPointerCandidate() {
+  if (!pointerDrag) return;
+  if (pointerDrag.timer) clearTimeout(pointerDrag.timer);
+  pointerDrag = null;
+  window.removeEventListener('pointermove', onPointerMove);
+  window.removeEventListener('pointerup', onPointerUp);
+  window.removeEventListener('pointercancel', onPointerCancel);
+  window.removeEventListener('keydown', onPointerKey);
+}
+
+function activatePointerDrag() {
+  if (!pointerDrag || pointerDrag.active) return;
+  if (pointerDrag.timer) {
+    clearTimeout(pointerDrag.timer);
+    pointerDrag.timer = null;
+  }
+  // 起拖：先克隆浮层再隐藏原项
+  pointerDrag.active = true;
+  pointerDragging.value = true;
+  dragKey.value = pointerDrag.key;
+  dragStarted = true;
+  lastHit = null;
+  lastSlot.value = null;
+  overKey.value = null;
+  dropPos.value = null;
+  shifts.value = new Map();
+  placeholder.value = null;
+  externalSlot.value = null;
+  tailPad.value = 0;
+  captureBoxes();
+  if (props.group) {
+    const idx = model.value.findIndex((it) => keyOf(it) === pointerDrag!.key);
+    const box = idx >= 0 ? boxes[idx] : undefined;
+    crossSession = {
+      group: props.group,
+      source: instanceId,
+      nonce: Symbol('k-sortable-cross'),
+      key: pointerDrag.key,
+      item: idx >= 0 ? model.value[idx] : null,
+      size: box ? { w: box.w, h: box.h } : { w: 0, h: 0 },
+      take: () => takeByKey(pointerDrag!.key),
+      hoverTarget: null,
+    };
+    notifyCrossWatchers();
+  }
+  pointerOverlay = createPointerOverlay(pointerDrag.el);
+  sourceHiddenKey.value = pointerDrag.key;
+  attachScrollSync();
+  document.body.style.userSelect = 'none';
+  (document.body.style as unknown as Record<string, string>).webkitUserSelect = 'none';
+  document.body.style.touchAction = 'none';
+  window.addEventListener('click', blockNextClick, true);
+  emit('dragstart', { x: pointerDrag.startX, y: pointerDrag.startY, key: pointerDrag.key, index: model.value.findIndex((it) => keyOf(it) === pointerDrag!.key) });
+}
+
 function onPointerMove(e: PointerEvent) {
   if (!pointerDrag) return;
   if (!pointerDrag.active) {
-    if (Math.hypot(e.clientX - pointerDrag.startX, e.clientY - pointerDrag.startY) < 4) return;
-    // 起拖：先克隆浮层再隐藏原项
-    pointerDrag.active = true;
-    pointerDragging.value = true;
-    dragKey.value = pointerDrag.key;
-    dragStarted = true;
-    lastHit = null;
-    lastSlot.value = null;
-    overKey.value = null;
-    dropPos.value = null;
-    shifts.value = new Map();
-    placeholder.value = null;
-    externalSlot.value = null;
-    tailPad.value = 0;
-    captureBoxes();
-    pointerOverlay = createPointerOverlay(pointerDrag.el);
-    sourceHiddenKey.value = pointerDrag.key;
-    attachScrollSync();
-    document.body.style.userSelect = 'none';
-    window.addEventListener('click', blockNextClick, true);
-    emit('dragstart', { x: pointerDrag.startX, y: pointerDrag.startY, key: pointerDrag.key, index: model.value.findIndex((it) => keyOf(it) === pointerDrag!.key) });
+    const dist = Math.hypot(e.clientX - pointerDrag.startX, e.clientY - pointerDrag.startY);
+    if (pointerDrag.touch) {
+      // 长按等待期内移动超过容差：让给页面滚动，取消候选
+      if (dist > props.touchTolerance) cancelPointerCandidate();
+      return;
+    }
+    if (dist < 4) return;
+    activatePointerDrag();
+    if (!pointerDrag) return;
   }
   if (!pointerDrag.active) return;
   e.preventDefault();
@@ -519,9 +650,43 @@ function onPointerMove(e: PointerEvent) {
     pointerOverlay.style.top = `${y - pointerDrag.offsetY}px`;
   }
   lastPointer = { x, y };
-  updateFromPointer();
-  ensureAutoScroll();
-  if (dragKey.value != null && lastSlot.value != null) {
+  const pointIn = (el: HTMLElement | null) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  };
+  // 用矩形判定而非 elementFromPoint：行间距/空隙会瞬时命中外层元素，导致占位闪断
+  pointerInsideOwn = pointIn(rootEl.value);
+  let host: SortablePointerHost | null = null;
+  if (props.group && crossSession) {
+    for (const candidate of pointerHosts) {
+      if (
+        candidate.owner !== instanceId &&
+        candidate.group === props.group &&
+        candidate.canAccept(crossSession.item) &&
+        pointIn(candidate.root)
+      ) {
+        host = candidate;
+        break;
+      }
+    }
+  }
+  activePointerHost = host;
+  if (host) {
+    stopAutoScroll();
+    host.over(x, y);
+  } else if (pointerInsideOwn) {
+    if (crossSession && crossSession.group === props.group) {
+      crossSession.hoverTarget = instanceId;
+      notifyCrossWatchers();
+    }
+    updateFromPointer();
+    ensureAutoScroll();
+  } else {
+    // 离开列表时保留上一次预览（指针抖动/过缝不清空），松手在列表外则不落位
+    stopAutoScroll();
+  }
+  if (pointerInsideOwn && dragKey.value != null && lastSlot.value != null) {
     emit('dragmove', {
       x,
       y,
@@ -535,8 +700,19 @@ function onPointerMove(e: PointerEvent) {
 function onPointerUp() {
   if (!pointerDrag) return;
   const wasActive = pointerDrag.active;
+  const host = activePointerHost;
+  const insideOwn = pointerInsideOwn;
   if (wasActive) {
-    commitLocalMove();
+    if (host) {
+      host.drop();
+      if (crossSession?.source === instanceId) {
+        crossSession = null;
+        notifyCrossWatchers();
+      }
+      clearLocalPreview();
+    } else if (insideOwn) {
+      commitLocalMove();
+    }
   }
   cleanupPointer();
   resetDrag();
@@ -554,13 +730,14 @@ function onPointerKey(e: KeyboardEvent) {
   }
 }
 
-function onItemPointerDown(item: T, e: PointerEvent) {
-  if (!props.pointer || props.disabled) return;
+function onItemPointerDown(item: T, e: PointerEvent, fromHandle = false) {
+  if (!usePointer.value || props.disabled) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const handle = e.currentTarget as HTMLElement;
   const itemEl = handle.closest('[data-part="item"]') as HTMLElement | null;
   if (!itemEl || !rootEl.value?.contains(itemEl)) return;
   const rect = itemEl.getBoundingClientRect();
+  const touch = e.pointerType !== 'mouse';
   pointerDrag = {
     key: keyOf(item),
     el: itemEl,
@@ -569,11 +746,19 @@ function onItemPointerDown(item: T, e: PointerEvent) {
     offsetX: e.clientX - rect.left,
     offsetY: e.clientY - rect.top,
     active: false,
+    touch,
+    timer: null,
   };
   window.addEventListener('pointermove', onPointerMove, { passive: false });
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('pointercancel', onPointerCancel);
   window.addEventListener('keydown', onPointerKey);
+  if (touch && !fromHandle) {
+    // 长按激活：期间保持页面可滚动
+    pointerDrag.timer = setTimeout(() => {
+      activatePointerDrag();
+    }, Math.max(0, props.touchDelay));
+  }
 }
 
 /** 落点：纵向/横向按布局中点，网格按最近中心；before = 落在目标前半区 */
@@ -873,39 +1058,98 @@ function move(from: number, to: number) {
   emit('change', list, { item: moved, from, to });
 }
 
+/** 外部拖入落位（HTML5 drop 与 pointer 目标共用） */
+function commitExternalDrop(): boolean {
+  if (!externalActive()) return false;
+  const session = activeCrossSession();
+  if (!session) return false;
+  const slot = externalSlot.value;
+  if (slot == null || (props.canDrop && !props.canDrop(session.item))) {
+    clearExternal();
+    return false;
+  }
+  const item = session.take() as T | null;
+  crossSession = null;
+  notifyCrossWatchers();
+  externalSlot.value = null;
+  overKey.value = null;
+  dropPos.value = null;
+  placeholder.value = null;
+  shifts.value = new Map();
+  tailPad.value = 0;
+  stopAutoScroll();
+  if (item != null) {
+    const next = [...model.value];
+    const idx = Math.min(slot, next.length);
+    next.splice(idx, 0, item);
+    model.value = next;
+    emit('add', item, idx);
+  }
+  return true;
+}
+
 function onDrop(e: DragEvent) {
   if (props.disabled) return;
-  const session = externalActive() ? activeCrossSession() : null;
-  if (session) {
-    const slot = externalSlot.value;
-    if (slot == null || (props.canDrop && !props.canDrop(session.item))) {
-      clearExternal();
-      return;
-    }
+  if (externalActive()) {
     e.preventDefault();
     e.stopPropagation();
-    const item = session.take() as T | null;
-    crossSession = null;
-    notifyCrossWatchers();
-    externalSlot.value = null;
-    overKey.value = null;
-    dropPos.value = null;
-    placeholder.value = null;
-    shifts.value = new Map();
-    stopAutoScroll();
-    if (item != null) {
-      const next = [...model.value];
-      const idx = Math.min(slot, next.length);
-      next.splice(idx, 0, item);
-      model.value = next;
-      emit('add', item, idx);
-    }
+    commitExternalDrop();
     return;
   }
   if (dragKey.value == null) return;
   e.preventDefault();
   e.stopPropagation();
   commitLocalMove();
+}
+
+function focusByKey(key: KSortableKey) {
+  nextTick(() => {
+    rootEl.value?.querySelector<HTMLElement>(`[data-part="item"][data-key="${String(key)}"]`)?.focus();
+  });
+}
+
+function onItemKeydown(item: T, e: KeyboardEvent) {
+  if (props.disabled) return;
+  const key = keyOf(item);
+  if (keyboardKey.value == null) {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      keyboardKey.value = key;
+      sourceHiddenKey.value = null;
+    }
+    return;
+  }
+  if (keyboardKey.value !== key) return;
+  const moveKeys =
+    props.orientation === 'vertical'
+      ? ['ArrowUp', 'ArrowDown']
+      : props.orientation === 'horizontal'
+        ? ['ArrowLeft', 'ArrowRight']
+        : ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+  if (moveKeys.includes(e.key)) {
+    e.preventDefault();
+    const delta =
+      e.key === 'ArrowUp' || e.key === 'ArrowLeft'
+        ? -1
+        : e.key === 'ArrowDown' || e.key === 'ArrowRight'
+          ? 1
+          : 0;
+    if (!delta) return;
+    const arr = [...model.value];
+    const from = arr.findIndex((it) => keyOf(it) === key);
+    const to = Math.min(arr.length - 1, Math.max(0, from + delta));
+    if (from < 0 || from === to) return;
+    const [moved] = arr.splice(from, 1);
+    arr.splice(to, 0, moved);
+    model.value = arr;
+    emit('change', arr, { item: moved, from, to });
+    focusByKey(key);
+    return;
+  }
+  if (e.key === ' ' || e.key === 'Enter' || e.key === 'Escape') {
+    e.preventDefault();
+    keyboardKey.value = null;
+  }
 }
 
 /** 本地落位（HTML5 drop 与 pointer up 共用） */
@@ -936,17 +1180,33 @@ const containerOn: KOnPack = {
 };
 const handleAttrs = computed(() => ({
   'data-part': 'handle',
-  draggable: props.pointer || props.disabled ? undefined : 'true',
+  draggable: usePointer.value || props.disabled ? undefined : 'true',
 }));
-const dragStartOn = (item: T): KOnPack =>
-  props.pointer
+const dragStartOn = (item: T): KOnPack => ({
+  keydown: (e) => onItemKeydown(item, e as KeyboardEvent),
+  ...(usePointer.value
     ? { pointerdown: (e) => onItemPointerDown(item, e as PointerEvent) }
     : {
         dragstart: (e) => startDrag(item, e as DragEvent),
         dragend: () => endDrag(),
-      };
-const itemDragOn = (item: T) => (hasHandle.value ? {} : dragStartOn(item));
-const handleDragOn = (item: T) => dragStartOn(item);
+      }),
+});
+function itemDragOnPack(item: T): KOnPack {
+  const pack: KOnPack = { keydown: (e) => onItemKeydown(item, e as KeyboardEvent) };
+  if (hasHandle.value) return pack;
+  Object.assign(pack, dragStartOn(item));
+  return pack;
+}
+const itemDragOn = (item: T) => itemDragOnPack(item);
+const handleDragOn = (item: T): KOnPack => ({
+  keydown: (e) => onItemKeydown(item, e as KeyboardEvent),
+  ...(usePointer.value
+    ? { pointerdown: (e) => onItemPointerDown(item, e as PointerEvent, true) }
+    : {
+        dragstart: (e) => startDrag(item, e as DragEvent),
+        dragend: () => endDrag(),
+      }),
+});
 function shiftStyle(item: T): CSSProperties | undefined {
   const s = shifts.value.get(keyOf(item));
   return s ? { transform: `translate(${s.x}px, ${s.y}px)` } : undefined;
@@ -975,10 +1235,12 @@ const itemAttrs = (item: T) => {
   return {
     'data-part': 'item',
     'data-key': String(key),
-    draggable: !props.pointer && !props.disabled && !hasHandle.value ? 'true' : undefined,
+    draggable: !usePointer.value && !props.disabled && !hasHandle.value ? 'true' : undefined,
     'data-dragging': sourceHiddenKey.value === key || undefined,
     'data-drop': overKey.value === key ? (dropPos.value ?? undefined) : undefined,
     'data-shift': shifts.value.has(key) || undefined,
+    tabindex: props.disabled ? undefined : 0,
+    'aria-grabbed': keyboardKey.value === key ? 'true' : undefined,
   };
 };
 
@@ -1013,6 +1275,7 @@ defineExpose({ move, resetDrag });
 onBeforeUnmount(() => {
   stopAutoScroll();
   detachScrollSync();
+  unregisterPointerHost();
   crossWatchers.delete(onCrossNotify);
   if (crossSession?.source === instanceId) {
     crossSession = null;
@@ -1044,7 +1307,7 @@ onBeforeUnmount(() => {
     name="k-sortable"
     v-bind="containerAttrs"
     class="k-sortable is-merged"
-    :class="[`k-sortable--${orientation}`, { 'is-disabled': disabled, 'is-scrolling': scrolling, 'is-dragging': dragKey !== null || placeholder !== null, 'is-pointer': pointer }, classNames?.root]"
+    :class="[`k-sortable--${orientation}`, { 'is-disabled': disabled, 'is-scrolling': scrolling, 'is-dragging': dragKey !== null || placeholder !== null, 'is-pointer': usePointer, 'is-keyboard-dragging': keyboardKey !== null }, classNames?.root]"
     :style="styles?.root"
     v-on="containerOn"
   >
@@ -1088,7 +1351,7 @@ onBeforeUnmount(() => {
     ref="rootEl"
     v-bind="containerAttrs"
     class="k-sortable"
-    :class="[`k-sortable--${orientation}`, { 'is-disabled': disabled, 'is-scrolling': scrolling, 'is-dragging': dragKey !== null || placeholder !== null, 'is-pointer': pointer }, classNames?.root]"
+    :class="[`k-sortable--${orientation}`, { 'is-disabled': disabled, 'is-scrolling': scrolling, 'is-dragging': dragKey !== null || placeholder !== null, 'is-pointer': usePointer, 'is-keyboard-dragging': keyboardKey !== null }, classNames?.root]"
     :style="styles?.root"
     v-on="containerOn"
   >
@@ -1177,7 +1440,15 @@ onBeforeUnmount(() => {
 }
 .k-sortable__item {
   position: relative;
+  /* 拖拽列表禁止文本选择，避免拖动/长按选中文字（表单控件除外） */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   transition: transform var(--k-sortable-shift-duration) var(--k-motion-ease-out-cubic);
+}
+.k-sortable__item :is(input, textarea, [contenteditable='true']) {
+  user-select: text;
+  -webkit-user-select: text;
 }
 /* 把手模式：把手与内容同一行，内容占满剩余宽度 */
 .k-sortable__item.has-handle {
@@ -1194,10 +1465,19 @@ onBeforeUnmount(() => {
 }
 .k-sortable.is-pointer .k-sortable__item {
   cursor: grab;
+  /* 与 dnd-kit 取舍一致：项上 touch-action none，避免移动时被浏览器滚动接管（滚动从空隙/空白处发起） */
   touch-action: none;
+}
+.k-sortable__item:focus-visible {
+  outline: 2px solid var(--k-color-primary);
+  outline-offset: -2px;
+}
+.k-sortable.is-keyboard-dragging .k-sortable__item[aria-grabbed='true'] {
+  box-shadow: inset 2px 0 0 var(--k-color-primary);
 }
 .k-sortable.is-pointer.is-dragging .k-sortable__item {
   user-select: none;
+  will-change: transform;
 }
 /* 拖拽源在原位置完全隐藏（不遮挡让位滑入的相邻项），拖拽副本由原生拖影承担 */
 .k-sortable__item[data-dragging] {

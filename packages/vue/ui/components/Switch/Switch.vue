@@ -256,4 +256,13 @@ defineExpose({ focus });
   to { transform: rotate(360deg); }
 }
 /* 按压遮罩豁免：同输入族（按压语义 = 开合触发，Button 黑罩不适用） */
+
+@media (hover: none) {
+  /* 触屏扩大命中区（视觉轨道不变） */
+  .k-switch::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+}
 </style>

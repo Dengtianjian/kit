@@ -274,4 +274,10 @@ defineExpose({ inputEl, focus: () => inputEl.value?.focus() });
   background-color: var(--k-color-text-quaternary);
 }
 /* 按压遮罩豁免：同输入族 */
+
+@media (hover: none) {
+  .k-radio {
+    min-height: 44px;
+  }
+}
 </style>

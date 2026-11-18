@@ -112,6 +112,8 @@ const config = useKConfig();
 const rootEl = ref<HTMLElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
 const scale = ref(1);
+const panX = ref(0);
+const panY = ref(0);
 const rotate = ref(0);
 const flipX = ref(false);
 const slideDir = ref<'next' | 'prev'>('next');
@@ -134,6 +136,10 @@ function setScale(next: number) {
   const v = Math.min(props.maxScale, Math.max(props.minScale, Number(next.toFixed(3))));
   if (v === scale.value) return;
   scale.value = v;
+  if (v <= 1) {
+    panX.value = 0;
+    panY.value = 0;
+  }
   emit('zoom', v);
 }
 function zoomBy(factor: number) {
@@ -150,6 +156,8 @@ function flip() {
 }
 function resetView() {
   setScale(1);
+  panX.value = 0;
+  panY.value = 0;
   rotate.value = 0;
   flipX.value = false;
 }
@@ -258,6 +266,80 @@ function onStageClick(e: MouseEvent) {
   if (t === stageEl.value || t.classList.contains('k-preview__mask')) close();
 }
 
+/* ---------- 触屏手势：双指缩放、放大后拖动平移、单指左右滑切换 ---------- */
+const pointers = new Map<number, { x: number; y: number }>();
+const gesturing = ref(false);
+let pinchStartDist = 0;
+let pinchStartScale = 1;
+let pinching = false;
+let panLast: { x: number; y: number } | null = null;
+let swipe: { x: number; y: number; t: number } | null = null;
+
+function onPointerDown(e: PointerEvent) {
+  gesturing.value = true;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinching = true;
+    pinchStartDist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    pinchStartScale = scale.value;
+    swipe = null;
+    panLast = null;
+    return;
+  }
+  if (pointers.size === 1) {
+    if (scale.value > 1) panLast = { x: e.clientX, y: e.clientY };
+    if (e.pointerType !== 'mouse' && scale.value === 1) swipe = { x: e.clientX, y: e.clientY, t: Date.now() };
+  }
+}
+function onPointerMove(e: PointerEvent) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinching && pointers.size === 2) {
+    e.preventDefault();
+    const [a, b] = [...pointers.values()];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    setScale(pinchStartScale * (dist / pinchStartDist));
+    return;
+  }
+  if (panLast && scale.value > 1) {
+    e.preventDefault();
+    panX.value += e.clientX - panLast.x;
+    panY.value += e.clientY - panLast.y;
+    panLast = { x: e.clientX, y: e.clientY };
+  }
+}
+function onPointerUp(e: PointerEvent) {
+  pointers.delete(e.pointerId);
+  if (!pointers.size) gesturing.value = false;
+  if (pinching) {
+    pinching = false;
+    swipe = null;
+    panLast = null;
+    return;
+  }
+  if (swipe && e.pointerType !== 'mouse' && scale.value === 1) {
+    const dx = e.clientX - swipe.x;
+    const dy = e.clientY - swipe.y;
+    const dt = Date.now() - swipe.t;
+    if (Math.abs(dx) > 50 && Math.abs(dy) < 40 && dt < 600) {
+      if (dx < 0) next();
+      else prev();
+    }
+  }
+  swipe = null;
+  panLast = null;
+}
+function onPointerCancel(e: PointerEvent) {
+  pointers.delete(e.pointerId);
+  if (!pointers.size) gesturing.value = false;
+  pinchStartDist = 0;
+  pinching = false;
+  panLast = null;
+  swipe = null;
+}
+
 /* ---------- headless 绑定包 ---------- */
 const rootAttrs = computed(() => ({
   'data-part': 'root',
@@ -274,6 +356,10 @@ const maskOn: KOnPack = { click: () => maskClick() };
 const stageOn: KOnPack = {
   wheel: (e) => onWheel(e as WheelEvent),
   click: (e) => onStageClick(e as MouseEvent),
+  pointerdown: (e) => onPointerDown(e as PointerEvent),
+  pointermove: (e) => onPointerMove(e as PointerEvent),
+  pointerup: (e) => onPointerUp(e as PointerEvent),
+  pointercancel: (e) => onPointerCancel(e as PointerEvent),
 };
 const prevOn: KOnPack = {
   click: (e) => {
@@ -336,7 +422,7 @@ const imageAttrs = computed(() => ({
   draggable: 'false',
 }));
 const imageStyle = computed<CSSProperties>(() => ({
-  transform: `scale(${scale.value}) rotate(${rotate.value}deg) scaleX(${flipX.value ? -1 : 1})`,
+  transform: `translate(${panX.value}px, ${panY.value}px) scale(${scale.value}) rotate(${rotate.value}deg) scaleX(${flipX.value ? -1 : 1})`,
 }));
 
 const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KPreviewRenderScope>(
@@ -424,7 +510,7 @@ defineExpose({ open: () => setOpen(true), close, next, prev, setCurrent, setScal
             ref="stageEl"
             data-part="stage"
             class="k-preview__stage"
-            :class="classNames?.stage"
+            :class="[classNames?.stage, { 'is-gesturing': gesturing }]"
             :style="styles?.stage"
             v-on="stageOn"
           >
@@ -544,12 +630,16 @@ defineExpose({ open: () => setOpen(true), close, next, prev, setCurrent, setScal
 .k-preview__stage {
   position: relative;
   z-index: 1;
+  touch-action: none;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+.k-preview__stage.is-gesturing .k-preview__img {
+  transition: none;
 }
 .k-preview__img {
   max-width: 86vw;

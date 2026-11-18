@@ -269,4 +269,14 @@ defineSlots<{
 }
 
 /* 触屏按压遮罩豁免：通告件本体无按压语义（关闭钮自带 hover 变色） */
+
+@media (hover: none) {
+  .k-alert__close {
+    padding: 8px;
+    margin: -8px -8px 0 0;
+  }
+  .k-alert__action {
+    flex-wrap: wrap;
+  }
+}
 </style>

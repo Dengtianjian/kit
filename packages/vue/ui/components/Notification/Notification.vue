@@ -282,4 +282,12 @@ defineSlots<{
   from { transform: scaleX(1); }
   to { transform: scaleX(0); }
 }
+
+@media (hover: none) {
+  .k-notification__close {
+    padding: 8px;
+    top: 4px;
+    right: 4px;
+  }
+}
 </style>

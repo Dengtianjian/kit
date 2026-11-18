@@ -603,4 +603,14 @@ defineSlots<{
   from { opacity: 1; }
   to { opacity: 0; }
 }
+
+@media (hover: none) {
+  .k-modal__close {
+    padding: 10px;
+    margin: -10px -10px 0 0;
+  }
+  .k-modal__footer {
+    padding-bottom: calc(var(--k-modal-padding) + env(safe-area-inset-bottom, 0px));
+  }
+}
 </style>

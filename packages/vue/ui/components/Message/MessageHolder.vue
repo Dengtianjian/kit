@@ -139,4 +139,13 @@ onBeforeUnmount(() => {
   from { opacity: 0; transform: translateY(calc(var(--k-size) * -1)); }
   to { opacity: 1; transform: none; }
 }
+
+@media (max-width: 767px) {
+  .k-message-list {
+    top: calc(var(--k-size) + env(safe-area-inset-top, 0px));
+  }
+  .k-message {
+    max-width: calc(100vw - 24px);
+  }
+}
 </style>

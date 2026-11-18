@@ -337,4 +337,10 @@ defineSlots<{
   from { opacity: 1; transform: none; }
   to { opacity: 0; transform: scale(0.85); }
 }
+
+@media (max-width: 767px) {
+  .k-popconfirm {
+    max-width: calc(100vw - 24px);
+  }
+}
 </style>

@@ -1199,4 +1199,11 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
   color: var(--k-color-text-tertiary);
   font-size: var(--k-select-option-font-size, var(--k-input-font-size));
 }
+
+@media (hover: none) {
+  .k-select__option {
+    min-height: 44px;
+    line-height: 44px;
+  }
+}
 </style>

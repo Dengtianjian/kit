@@ -1,0 +1,132 @@
+<script setup lang="ts">
+import { computed, useSlots } from 'vue';
+import type { CSSProperties, VNodeChild } from 'vue';
+import { useCustomRender } from '../../composables/useCustomRender';
+import type { KRenderFn } from '../../composables/useCustomRender';
+
+defineOptions({ name: 'KControlGroup' });
+
+/** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
+export interface KControlGroupRenderScope {
+  vertical: boolean;
+  block: boolean;
+  /** data-part + 方向/通栏类（布局逻辑）；边框拼接等视觉自绘 */
+  rootAttrs: Record<string, unknown>;
+  slots: ReturnType<typeof useSlots>;
+}
+
+interface KControlGroupProps {
+  /** 纵向拼接连成一组（默认横向） */
+  vertical?: boolean;
+  /** 通栏：宽度 100%，子项按比例拉伸填满 */
+  block?: boolean;
+  /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
+  render?: KRenderFn<KControlGroupRenderScope>;
+  classNames?: { root?: string };
+  styles?: { root?: CSSProperties };
+}
+
+const props = withDefaults(defineProps<KControlGroupProps>(), {
+  vertical: false,
+  block: false,
+});
+
+const slots = useSlots();
+
+const rootAttrs = computed(() => ({
+  'data-part': 'root',
+  'data-vertical': props.vertical ? 'true' : undefined,
+  'data-block': props.block ? 'true' : undefined,
+}));
+
+const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KControlGroupRenderScope>(
+  () => props.render,
+  () => ({
+    vertical: props.vertical,
+    block: props.block,
+    rootAttrs: rootAttrs.value,
+    slots,
+  }),
+);
+
+defineSlots<{
+  default?(): VNodeChild;
+  render?(scope: KControlGroupRenderScope): VNodeChild;
+}>();
+</script>
+
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <div
+    v-else
+    v-bind="rootAttrs"
+    class="k-control-group"
+    :class="[{ 'is-vertical': vertical, 'is-block': block }, classNames?.root]"
+    :style="styles?.root"
+  >
+    <slot />
+  </div>
+</template>
+
+<style>
+.k-control-group {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.k-control-group > * {
+  position: relative;
+  min-width: 0;
+}
+.k-control-group.is-block {
+  display: flex;
+  width: 100%;
+}
+.k-control-group.is-block > * {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+}
+.k-control-group.is-vertical {
+  flex-direction: column;
+  align-items: stretch;
+}
+.k-control-group.is-vertical > * {
+  width: 100%;
+}
+
+/* 横向拼接：相邻项压 1px 边框，首尾保留圆角、中间直角 */
+.k-control-group:not(.is-vertical) > * + * {
+  margin-inline-start: calc(var(--k-line-width) * -1);
+}
+/* 双类名提权：覆盖子组件自身的 border-radius 变量声明 */
+.k-control-group.k-control-group:not(.is-vertical) > :not(:first-child) {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+.k-control-group.k-control-group:not(.is-vertical) > :not(:last-child) {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+/* 纵向拼接：上下压边，首尾保留圆角 */
+.k-control-group.is-vertical > * + * {
+  margin-block-start: calc(var(--k-line-width) * -1);
+}
+.k-control-group.k-control-group.is-vertical > :not(:first-child) {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+.k-control-group.k-control-group.is-vertical > :not(:last-child) {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+/* 激活项抬层：hover / 聚焦时边框盖住相邻项 */
+.k-control-group > *:focus-within,
+.k-control-group > *:hover {
+  z-index: 1;
+}
+</style>

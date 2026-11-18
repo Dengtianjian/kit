@@ -40,7 +40,7 @@
   --k-seed-line-width: 1;
   --k-seed-size-unit: 4;
   --k-seed-size-step: 4;
-  --k-seed-control-height: 32;
+  --k-seed-control-height: 38;
   --k-seed-motion-unit: 0.1;
   --k-seed-z-index-popup-base: 1000;
   --k-seed-neutral-tint: 0.04;
@@ -297,7 +297,7 @@
   --k-control-height-xs: max(20px, calc(var(--k-seed-control-height) * 1px - 8px));
   --k-control-height-sm: max(24px, calc(var(--k-seed-control-height) * 1px - 4px));
   --k-control-height: calc(var(--k-seed-control-height) * 1px);
-  --k-control-height-lg: calc(var(--k-seed-control-height) * 1px + 8px);
+  --k-control-height-lg: calc(var(--k-seed-control-height) * 1px + 4px);
 
   --k-line-width: calc(var(--k-seed-line-width) * 1px);
   --k-line-type: solid;
@@ -367,7 +367,8 @@
 @media (max-width: 767px) {
   :root,
   .k-config-provider {
-    --k-seed-control-height: 44; /* 阶梯自动派生 xs36/sm40/lg52 */
+    --k-seed-control-height: 44; /* 阶梯派生 xs36/sm40；lg 由下方显式保留 52 */
+    --k-control-height-lg: 52px;
     --k-seed-border-radius: 8;
     --k-padding: var(--k-size-sm); /* 16→12 */
     --k-padding-lg: var(--k-size); /* 24→16 */

@@ -28,6 +28,7 @@ export { default as KIcon } from "./components/Icon/Icon.vue";
 export { default as KButton } from "./components/Button/Button.vue";
 export { default as KButtonGroup } from "./components/Button/ButtonGroup.vue";
 export { default as KSpace } from "./components/Space/Space.vue";
+export { default as KControlGroup } from "./components/ControlGroup/ControlGroup.vue";
 export { default as KFlex } from "./components/Flex/Flex.vue";
 export { default as KDivider } from "./components/Divider/Divider.vue";
 export { default as KTitle } from "./components/Typography/Title.vue";
