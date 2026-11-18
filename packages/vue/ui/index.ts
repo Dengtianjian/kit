@@ -60,6 +60,17 @@ export { default as KModal } from "./components/Modal/Modal.vue";
 export { default as KAlert } from "./components/Alert/Alert.vue";
 export { default as KSpin } from "./components/Spin/Spin.vue";
 export { default as KNotification } from "./components/Notification/Notification.vue";
+export { default as KDatePicker } from "./components/DatePicker/DatePicker.vue";
+export { default as KUpload } from "./components/Upload/Upload.vue";
+export { default as KSortable } from "./components/Sortable/Sortable.vue";
+export type {
+  KSortableOrientation,
+  KSortableKey,
+  KSortableItemKey,
+  KSortableMoveInfo,
+  KSortableRenderScope,
+} from "./components/Sortable/types";
+export { default as KPreview } from "./components/Preview/Preview.vue";
 export type { KSelectOption, KSelectGroup, KSelectRenderScope } from "./components/Select/Select.vue";
 export type { KDividerRenderScope } from "./components/Divider/Divider.vue";
 export type { KTooltipRenderScope } from "./components/Tooltip/Tooltip.vue";
@@ -94,6 +105,25 @@ export type { KPopoverRenderScope } from "./components/Popover/Popover.vue";
 export type { KPopconfirmRenderScope } from "./components/Popconfirm/Popconfirm.vue";
 export type { KModalRenderScope } from "./components/Modal/Modal.vue";
 export type { KNotificationRenderScope } from "./components/Notification/Notification.vue";
+export type { KDatePickerRenderScope, KDatePickerNavigateDir } from "./components/DatePicker/DatePicker.vue";
+export type { KPickerMode, KDateViewLevel, KDateCell } from "./utils/date";
+export type {
+  KUploadFile,
+  KUploadFileItem,
+  KUploadFileStatus,
+  KUploadListType,
+  KUploadChangeReason,
+  KUploadRenderScope,
+  KUploadUpload,
+  KUploadRequestOptions,
+  KUploadRequestResult,
+  KUploadRemoveHook,
+} from "./components/Upload/Upload.vue";
+export type {
+  KPreviewItem,
+  KPreviewItemType,
+  KPreviewRenderScope,
+} from "./components/Preview/Preview.vue";
 export type { KRenderFn, KOnPack } from "./composables/useCustomRender";
 export { onProps } from "./composables/useCustomRender";
 export type { KCheckboxOption, KCheckboxOptionInput } from "./components/Checkbox/types";
