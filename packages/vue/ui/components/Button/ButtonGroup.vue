@@ -1,52 +1,3 @@
-<script setup lang="ts">
-import { computed, provide, useSlots } from 'vue';
-import type { CSSProperties, VNodeChild } from 'vue';
-import { buttonGroupSizeKey } from './groupContext';
-import type { ButtonSize } from './groupContext';
-import { useCustomRender } from '../../composables/useCustomRender';
-import type { KRenderFn } from '../../composables/useCustomRender';
-
-defineOptions({ name: 'KButtonGroup' });
-
-/** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
-export interface KButtonGroupRenderScope {
-  size: ButtonSize | undefined;
-  vertical: boolean;
-  /** role=group 语义 + data-part；size 下发（provide）照跑，接壤视觉自绘 */
-  rootAttrs: Record<string, unknown>;
-  slots: ReturnType<typeof useSlots>;
-}
-
-interface KButtonGroupProps {
-  /** 下发给组内 KButton 的 size；子级自传优先 */
-  size?: ButtonSize;
-  vertical?: boolean;
-  /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
-  render?: KRenderFn<KButtonGroupRenderScope>;
-  classNames?: { root?: string };
-  styles?: { root?: CSSProperties };
-}
-
-const props = withDefaults(defineProps<KButtonGroupProps>(), {
-  vertical: false,
-});
-
-provide(buttonGroupSizeKey, computed(() => props.size));
-
-const slots = useSlots();
-const rootAttrs = { 'data-part': 'root', role: 'group' };
-
-const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KButtonGroupRenderScope>(
-  () => props.render,
-  () => ({ size: props.size, vertical: props.vertical, rootAttrs, slots }),
-);
-
-defineSlots<{
-  default?(): VNodeChild;
-  render?(scope: KButtonGroupRenderScope): VNodeChild;
-}>();
-</script>
-
 <template>
   <template v-if="hasCustomRender">
     <slot v-if="$slots.render" name="render" v-bind="renderScope" />
@@ -66,6 +17,61 @@ defineSlots<{
     <slot />
   </div>
 </template>
+
+<script setup lang="ts">
+import { computed, provide, useSlots } from 'vue';
+import type { CSSProperties, VNodeChild } from 'vue';
+import { buttonGroupSizeKey } from './groupContext';
+import type { ButtonSize } from './groupContext';
+import { useResponsiveValue } from '../../composables/useResponsiveValue';
+import type { KResponsiveValue, KResponsiveMap } from '../../composables/useResponsiveValue';
+import { useCustomRender } from '../../composables/useCustomRender';
+import type { KRenderFn } from '../../composables/useCustomRender';
+
+defineOptions({ name: 'KButtonGroup' });
+
+/** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
+export interface KButtonGroupRenderScope {
+  size: ButtonSize | undefined;
+  vertical: boolean;
+  /** role=group 语义 + data-part；size 下发（provide）照跑，接壤视觉自绘 */
+  rootAttrs: Record<string, unknown>;
+  slots: ReturnType<typeof useSlots>;
+}
+
+interface KButtonGroupProps {
+  /** 下发给组内 KButton 的 size；子级自传优先；对象/字符串按断点取值 */
+  size?: ButtonSize | KResponsiveMap<ButtonSize> | string;
+  vertical?: boolean;
+  /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
+  render?: KRenderFn<KButtonGroupRenderScope>;
+  classNames?: { root?: string };
+  styles?: { root?: CSSProperties };
+}
+
+const props = withDefaults(defineProps<KButtonGroupProps>(), {
+  vertical: false,
+});
+
+const resolvedSize = useResponsiveValue<ButtonSize>(
+  () => props.size as KResponsiveValue<ButtonSize> | undefined,
+  { coerce: raw => raw as ButtonSize },
+);
+provide(buttonGroupSizeKey, computed(() => resolvedSize.value));
+
+const slots = useSlots();
+const rootAttrs = { 'data-part': 'root', role: 'group' };
+
+const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KButtonGroupRenderScope>(
+  () => props.render,
+  () => ({ size: resolvedSize.value, vertical: props.vertical, rootAttrs, slots }),
+);
+
+defineSlots<{
+  default?(): VNodeChild;
+  render?(scope: KButtonGroupRenderScope): VNodeChild;
+}>();
+</script>
 
 <style>
 /* ---------- 按钮组（2026-11-17 拍板走 naive 路线：antd v5 已弃用 ButtonGroup 推荐 Space，但接壤体验 Space 给不了） ---------- */

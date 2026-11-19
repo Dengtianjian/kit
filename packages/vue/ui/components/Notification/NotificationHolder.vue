@@ -1,3 +1,57 @@
+<template>
+  <Teleport to="body" defer>
+    <div
+      v-for="col in columns"
+      :key="col.placement"
+      :ref="(el) => setListEl(col.placement, el)"
+      :class="[
+        popupClasses,
+        `is-${col.placement}`,
+        scrollable.has(col.placement) ? 'is-scrollable' : '',
+        isStackMode(col.placement, col.list.length) ? 'is-stack' : '',
+        expanded.has(col.placement) ? 'is-stack-expanded' : '',
+      ]"
+      :data-k-theme="popupTheme"
+      :style="listStyle(col.placement)"
+      data-part="list"
+    >
+      <div
+        class="k-notification-list-content"
+        :style="contentStyle(col.placement)"
+        @mouseenter="onListEnter(col.placement)"
+        @mouseleave="onListLeave(col.placement)"
+      >
+      <KNotification
+        v-for="it in col.list"
+        :key="it.id"
+        :style="stackStyles[it.id]"
+        :ref="(inst) => setEl(it.id, inst)"
+        :title="it.config.title"
+        :description="it.config.description"
+        :actions="it.config.actions ?? it.config.btn"
+        :type="it.config.type"
+        :icon="it.config.icon"
+        :closable="it.closable"
+        :close-icon="it.closeIcon"
+        :show-progress="it.showProgress"
+        :progress-duration="it.duration === false ? undefined : it.duration"
+        :pause-on-hover="resolvedPause(it)"
+        :role="it.config.role"
+        :class-names="it.config.classNames"
+        :styles="it.config.styles"
+        :class="[
+          it.updated ? 'is-static' : '',
+          closing.has(it.id) ? 'is-closing' : '',
+          isCardPaused(it) ? 'is-paused' : '',
+        ]"
+        @close="requestClose(it)"
+        @click="it.config.onClick?.($event)"
+      />
+      </div>
+    </div>
+  </Teleport>
+</template>
+
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { CSSProperties } from 'vue';
@@ -7,7 +61,7 @@ import type { KNotificationHolderItem, KNotificationPlacement, KNotificationServ
 
 defineOptions({ name: 'KNotificationHolder' });
 
-/** KApp 内部件：notification 队列按 placement 分列渲染（滚动容器）+ 自动关闭计时/悬停暂停/退场塌陷 */
+/** KApp 内部件：notification 队列按 placement 分列渲染（每个方位一个列表）+ 自动关闭计时/悬停暂停/退场塌陷 */
 const props = defineProps<{ svc: KNotificationService }>();
 
 const PLACEMENTS: KNotificationPlacement[] = [
@@ -21,6 +75,135 @@ const columns = computed(() =>
 
 const { popupClasses, popupTheme } = usePopupHost(() => ['k-notification-list']);
 
+/* ---- 堆叠收起（antd 路线）：卡片绝对定位，收起时等比缩放错位，hover 展开按真实高度排开 ---- */
+const expanded = ref<Set<KNotificationPlacement>>(new Set());
+const collapseTimers = new Map<KNotificationPlacement, ReturnType<typeof setTimeout>>();
+const stackStyles = ref<Record<number, CSSProperties>>({});
+const contentHeights = ref<Partial<Record<KNotificationPlacement, number>>>({});
+const STACK_OFFSET = 12;
+const STACK_GAP = 16;
+
+function stackLimit(): number {
+  const n = props.svc.global.value.stackLimit;
+  return n == null ? 3 : Math.max(0, n);
+}
+
+function isStackMode(placement: KNotificationPlacement, count: number): boolean {
+  const limit = stackLimit();
+  return limit > 0 && count > limit;
+}
+
+function isBottom(placement: KNotificationPlacement): boolean {
+  return placement.startsWith('bottom');
+}
+
+function contentStyle(placement: KNotificationPlacement): CSSProperties {
+  const h = contentHeights.value[placement];
+  return h == null ? {} : { height: `${h}px` };
+}
+
+function layoutStacks() {
+  const styles: Record<number, CSSProperties> = {};
+  const heights: Partial<Record<KNotificationPlacement, number>> = {};
+  for (const col of columns.value) {
+    const placement = col.placement;
+    const list = col.list;
+    const bottom = isBottom(placement);
+    const collapsed = isStackMode(placement, list.length) && !expanded.value.has(placement);
+    // 最新一张在前（z 最高）；无论是否堆叠都用绝对定位，跨阈值时 top/transform 可过渡
+    const items = [...list].reverse();
+    let offset = 0;
+    let frontH = 0;
+    let visible = 0;
+    items.forEach((item, index) => {
+      const el = els.get(item.id);
+      const isClosing = closing.value.has(item.id);
+      const h = isClosing ? 0 : (el?.offsetHeight ?? 0);
+      if (index === 0) frontH = h;
+      const hidden = isClosing || (collapsed && index >= stackLimit());
+      const style: CSSProperties = {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        zIndex: 100 - index,
+        opacity: hidden ? 0 : 1,
+        pointerEvents: hidden ? 'none' : 'auto',
+        transform: isClosing
+          ? 'scale(0.86)'
+          : collapsed
+            ? `scale(${Math.max(0.88, 1 - index * 0.04)})`
+            : 'scale(1)',
+        transformOrigin: bottom ? 'center bottom' : 'center top',
+      };
+      if (collapsed) {
+        const shift = Math.min(index, stackLimit() - 1) * STACK_OFFSET;
+        if (bottom) style.bottom = `${shift}px`;
+        else style.top = `${shift}px`;
+      } else {
+        if (bottom) style.bottom = `${offset}px`;
+        else style.top = `${offset}px`;
+        offset += h + STACK_GAP;
+      }
+      styles[item.id] = style;
+      if (!hidden) visible += 1;
+    });
+    heights[placement] = collapsed
+      ? frontH + Math.max(0, visible - 1) * STACK_OFFSET
+      : Math.max(0, offset - STACK_GAP);
+  }
+  stackStyles.value = styles;
+  contentHeights.value = heights;
+}
+
+function scheduleLayout() {
+  void nextTick(layoutStacks);
+}
+
+function expandPlacement(placement: KNotificationPlacement) {
+  const timer = collapseTimers.get(placement);
+  if (timer) clearTimeout(timer);
+  collapseTimers.delete(placement);
+  if (!expanded.value.has(placement)) {
+    expanded.value = new Set(expanded.value).add(placement);
+    scheduleLayout();
+  }
+}
+
+function scheduleCollapse(placement: KNotificationPlacement) {
+  const timer = collapseTimers.get(placement);
+  if (timer) clearTimeout(timer);
+  collapseTimers.set(
+    placement,
+    setTimeout(() => {
+      collapseTimers.delete(placement);
+      if (!expanded.value.has(placement)) return;
+      expanded.value = new Set([...expanded.value].filter((p) => p !== placement));
+      scheduleLayout();
+    }, 160),
+  );
+}
+
+const hovered = ref<Set<KNotificationPlacement>>(new Set());
+
+function onListEnter(placement: KNotificationPlacement) {
+  hovered.value = new Set(hovered.value).add(placement);
+  expandPlacement(placement);
+  for (const item of props.svc.items.value) {
+    if (item.placement === placement && shouldPause(item)) pauseTimer(item);
+  }
+}
+
+function onListLeave(placement: KNotificationPlacement) {
+  const next = new Set(hovered.value);
+  next.delete(placement);
+  hovered.value = next;
+  scheduleCollapse(placement);
+  for (const item of props.svc.items.value) {
+    if (item.placement === placement) resumeTimer(item);
+  }
+}
+
+
 /* ---- 溢出检测：超高列切 is-scrollable（恢复交互 + 显细滚动条），未溢出列保持 pointer-events:none 不挡背后页面 ---- */
 const listEls = new Map<KNotificationPlacement, HTMLElement>();
 const scrollable = ref<Set<KNotificationPlacement>>(new Set());
@@ -31,13 +214,32 @@ function setListEl(placement: KNotificationPlacement, el: unknown) {
 }
 function syncScrollable() {
   const next = new Set<KNotificationPlacement>();
-  for (const [p, el] of listEls) if (el.scrollHeight > el.clientHeight + 1) next.add(p);
+  for (const [p, el] of listEls) {
+    if (el.scrollHeight > el.clientHeight + 1) next.add(p);
+  }
   scrollable.value = next;
 }
-watch([() => props.svc.items.value, () => props.svc.global.value], () => nextTick(syncScrollable));
+watch(
+  () => props.svc.global.value.pauseOnHover,
+  (v) => {
+    // 全局开关实时联动：关 → 恢复所有计时；开 → 正在悬停的列中，单条允许暂停的立即暂停
+    for (const item of props.svc.items.value) {
+      if (v === false) resumeTimer(item);
+      else if (hovered.value.has(item.placement) && shouldPause(item)) pauseTimer(item);
+    }
+  },
+);
+watch([() => props.svc.items.value, () => props.svc.global.value, expanded], () => {
+  void nextTick(() => {
+    layoutStacks();
+    syncScrollable();
+  });
+});
 onMounted(() => {
+  layoutStacks();
   syncScrollable();
   window.addEventListener('resize', syncScrollable);
+  window.addEventListener('resize', layoutStacks);
 });
 
 /** 阴影留白带上下合计（px），与样式表 --k-notification-gutter-top/bottom 同值 */
@@ -90,32 +292,49 @@ function syncTimers() {
     arm(item.id, e);
   }
 }
-watch(() => props.svc.items.value, syncTimers, { immediate: true });
 
 function pauseTimer(item: KNotificationHolderItem) {
   const e = timers.get(item.id);
   if (!e || e.paused || !e.handle) return;
   clearTimeout(e.handle);
   e.handle = null;
-  e.remaining -= Date.now() - e.startedAt;
+  e.remaining = Math.max(0, e.remaining - (Date.now() - e.startedAt));
   e.paused = true;
+  // 暂停时已经到点（计时器回调尚未执行 / 后台节流）：直接收口，避免停在无 timer 的 paused 状态
+  if (e.remaining <= 0) {
+    e.paused = false;
+    requestClose(item);
+  }
 }
 function resumeTimer(item: KNotificationHolderItem) {
   const e = timers.get(item.id);
-  if (!e || !e.paused || e.remaining <= 0) return;
+  if (!e || !e.paused) return;
+  if (e.remaining <= 0) {
+    e.paused = false;
+    requestClose(item);
+    return;
+  }
   arm(item.id, e);
 }
-function onEnter(item: KNotificationHolderItem) {
-  if (item.pauseOnHover && item.duration !== false) pauseTimer(item);
+/** 单条 pauseOnHover=true 才暂停；global pauseOnHover=false 作为整列总开关（可运行时切换） */
+function shouldPause(item: KNotificationHolderItem): boolean {
+  return props.svc.global.value.pauseOnHover !== false && item.pauseOnHover && item.duration !== false;
 }
-function onLeave(item: KNotificationHolderItem) {
-  if (item.pauseOnHover && item.duration !== false) resumeTimer(item);
+/** 卡片的悬停冻结：单条 false 永远不暂停；单条 true 随全局开关 */
+function resolvedPause(item: KNotificationHolderItem): boolean {
+  return item.pauseOnHover && props.svc.global.value.pauseOnHover !== false;
 }
-
-/* ---- 退场：锁定当前高度 → is-closing 塌陷（height/margin/padding → 0）→ 移除 ---- */
+/** 列悬停暂停时，列内所有可暂停卡片（不只鼠标下那张）的进度条一起冻结 */
+function isCardPaused(item: KNotificationHolderItem): boolean {
+  return hovered.value.has(item.placement) && shouldPause(item);
+}
+/* ---- 退场：antd 路线——当前项淡出缩放，布局按 0 高重排，其它项平滑补位 ---- */
 const closing = ref<Set<number>>(new Set());
 const els = new Map<number, HTMLElement>();
 const closeBackstops = new Map<number, ReturnType<typeof setTimeout>>();
+
+// 放在 closing 初始化之后：immediate 回调会读 closing，提前注册会触发 TDZ
+watch(() => props.svc.items.value, syncTimers, { immediate: true });
 
 function setEl(id: number, inst: unknown) {
   const el = (inst as { $el?: HTMLElement } | null)?.$el;
@@ -128,13 +347,11 @@ function requestClose(item: KNotificationHolderItem) {
   const e = timers.get(item.id);
   if (e?.handle) clearTimeout(e.handle);
   timers.delete(item.id);
-  const el = els.get(item.id);
-  if (el) el.style.height = `${el.offsetHeight}px`;
   closing.value = new Set(closing.value).add(item.id);
-  // 塌陷过渡依赖 height 过渡；主题若关掉动画则收不到 transitionend，兜底定时移除
+  scheduleLayout();
   closeBackstops.set(
     item.id,
-    setTimeout(() => finishClose(item.id), 320),
+    setTimeout(() => finishClose(item.id), 240),
   );
 }
 function finishClose(id: number) {
@@ -145,57 +362,17 @@ function finishClose(id: number) {
   const item = props.svc.items.value.find((x) => x.id === id);
   if (item) props.svc.remove(item);
 }
-function onTransitionEnd(item: KNotificationHolderItem, e: TransitionEvent) {
-  if (e.propertyName === 'height' && closing.value.has(item.id)) finishClose(item.id);
-}
-
 onBeforeUnmount(() => {
   window.removeEventListener('resize', syncScrollable);
+  window.removeEventListener('resize', layoutStacks);
   for (const e of timers.values()) if (e.handle) clearTimeout(e.handle);
   timers.clear();
   for (const t of closeBackstops.values()) clearTimeout(t);
   closeBackstops.clear();
+  for (const t of collapseTimers.values()) clearTimeout(t);
+  collapseTimers.clear();
 });
 </script>
-
-<template>
-  <Teleport to="body" defer>
-    <div
-      v-for="col in columns"
-      :key="col.placement"
-      :ref="(el) => setListEl(col.placement, el)"
-      :class="[popupClasses, `is-${col.placement}`, scrollable.has(col.placement) ? 'is-scrollable' : '']"
-      :data-k-theme="popupTheme"
-      :style="listStyle(col.placement)"
-      data-part="list"
-    >
-      <KNotification
-        v-for="it in col.list"
-        :key="it.id"
-        :ref="(inst) => setEl(it.id, inst)"
-        :title="it.config.title"
-        :description="it.config.description"
-        :actions="it.config.actions ?? it.config.btn"
-        :type="it.config.type"
-        :icon="it.config.icon"
-        :closable="it.closable"
-        :close-icon="it.closeIcon"
-        :show-progress="it.showProgress"
-        :progress-duration="it.duration === false ? undefined : it.duration"
-        :pause-on-hover="it.pauseOnHover"
-        :role="it.config.role"
-        :class-names="it.config.classNames"
-        :styles="it.config.styles"
-        :class="[it.updated ? 'is-static' : '', closing.has(it.id) ? 'is-closing' : '']"
-        @close="requestClose(it)"
-        @click="it.config.onClick?.($event)"
-        @mouseenter="onEnter(it)"
-        @mouseleave="onLeave(it)"
-        @transitionend="onTransitionEnd(it, $event)"
-      />
-    </div>
-  </Teleport>
-</template>
 
 <style>
 .k-notification-list {
@@ -264,6 +441,25 @@ onBeforeUnmount(() => {
   animation: k-notification-in var(--k-motion-duration-mid) var(--k-motion-ease-out-cubic);
 }
 /* 溢出列：恢复整列交互（滚轮/滚动条拖拽在留白带与条间隔上也生效），细轨滚动条走 fill 阶梯色（Modal body 同款） */
+.k-notification-list-content {
+  position: relative;
+  flex-shrink: 0;
+  width: 100%;
+  pointer-events: auto;
+  height: 0;
+  transition: height var(--k-motion-duration-mid) var(--k-motion-ease-in-out-cubic);
+}
+.k-notification-list-content .k-notification {
+  margin: 0 !important;
+  transition:
+    top var(--k-motion-duration-mid) var(--k-motion-ease-in-out-cubic),
+    bottom var(--k-motion-duration-mid) var(--k-motion-ease-in-out-cubic),
+    transform var(--k-motion-duration-mid) var(--k-motion-ease-in-out-cubic),
+    opacity var(--k-motion-duration-fast) linear;
+}
+.k-notification-list.is-stack {
+  pointer-events: auto;
+}
 .k-notification-list.is-scrollable {
   pointer-events: auto;
   scrollbar-width: thin;
@@ -302,19 +498,12 @@ onBeforeUnmount(() => {
   to { opacity: 1; transform: none; }
 }
 
-/* 退场：antd 高度塌陷语义——本条收拢，后续项平滑补位（JS 先锁定 inline height） */
+/* 退场：淡出 + 缩小，位置/高度由 layoutStacks 过渡补位 */
 .k-notification.is-closing {
-  height: 0 !important;
-  opacity: 0;
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-  overflow: hidden;
-  transition:
-    height var(--k-motion-duration-mid) var(--k-motion-ease-in-cubic),
-    opacity var(--k-motion-duration-fast) linear,
-    margin var(--k-motion-duration-mid) var(--k-motion-ease-in-cubic),
-    padding var(--k-motion-duration-mid) var(--k-motion-ease-in-cubic);
+  pointer-events: none;
+}
+/* 列级悬停暂停：整列可暂停卡片的进度条同步冻结（CSS :hover 只管鼠标下那张，需提高优先级） */
+.k-notification-list .k-notification.is-paused .k-notification__progress .k-notification__progress-bar {
+  animation-play-state: paused;
 }
 </style>

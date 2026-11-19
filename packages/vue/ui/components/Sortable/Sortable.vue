@@ -1,3 +1,112 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+
+  <!-- 合并根模式：根节点即排序容器（如 <tbody>），列表项直接作为其子级 -->
+  <template v-else-if="rootTag">
+  <Teleport to="body">
+    <div
+      v-if="showPlaceholder && floatingPh"
+      class="k-sortable__placeholder is-floating"
+      aria-hidden="true"
+      :style="{ left: `${floatingPh.x + (orientation === 'vertical' ? Math.max(0, placeholderInset ?? 0) : 0)}px`, top: `${floatingPh.y}px`, width: `${Math.max(0, floatingPh.w - (orientation === 'vertical' ? Math.max(0, placeholderInset ?? 0) : 0))}px`, height: `${floatingPh.h}px` }"
+    />
+  </Teleport>
+  <TransitionGroup
+    ref="mergedRef"
+    :tag="rootTag"
+    name="k-sortable"
+    v-bind="containerAttrs"
+    class="k-sortable is-merged"
+    :class="[`k-sortable--${orientation}`, { 'is-disabled': disabled, 'is-scrolling': scrolling, 'is-dragging': dragKey !== null || placeholder !== null, 'is-pointer': usePointer, 'is-keyboard-dragging': keyboardKey !== null }, classNames?.root]"
+    :style="styles?.root"
+    v-on="containerOn"
+  >
+    <component
+      :is="itemTag"
+      v-for="(item, index) in model"
+      :key="keyOf(item)"
+      v-bind="itemAttrs(item)"
+      class="k-sortable__item"
+      :class="[classNames?.item, { 'has-handle': hasHandle && itemTag !== 'tr' }]"
+      :style="[styles?.item, shiftStyle(item)]"
+      v-on="itemDragOn(item)"
+    >
+      <span
+        v-if="hasHandle && itemTag !== 'tr'"
+        v-bind="handleAttrs"
+        class="k-sortable__handle"
+        :class="classNames?.handle"
+        :style="styles?.handle"
+        v-on="handleDragOn(item)"
+      >
+        <slot name="handle" :item="item" :index="index">
+          <svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.2" /><circle cx="10" cy="4" r="1.2" /><circle cx="6" cy="8" r="1.2" /><circle cx="10" cy="8" r="1.2" /><circle cx="6" cy="12" r="1.2" /><circle cx="10" cy="12" r="1.2" /></svg>
+        </slot>
+      </span>
+      <slot :item="item" :index="index" />
+    </component>
+    <tr
+      v-if="tailPad && itemTag === 'tr'"
+      :key="'__k-sortable-tail'"
+      class="k-sortable__tail"
+      aria-hidden="true"
+    >
+      <td :colspan="columns" :style="{ height: `${tailPad}px`, padding: 0, border: 0 }" />
+    </tr>
+  </TransitionGroup>
+  </template>
+
+  <div
+    v-else
+    ref="rootEl"
+    v-bind="containerAttrs"
+    class="k-sortable"
+    :class="[`k-sortable--${orientation}`, { 'is-disabled': disabled, 'is-scrolling': scrolling, 'is-dragging': dragKey !== null || placeholder !== null, 'is-pointer': usePointer, 'is-keyboard-dragging': keyboardKey !== null }, classNames?.root]"
+    :style="styles?.root"
+    v-on="containerOn"
+  >
+    <component
+      :is="itemTag"
+      v-if="showPlaceholder && placeholder"
+      class="k-sortable__placeholder"
+      :class="{ 'is-row': itemTag === 'tr' }"
+      aria-hidden="true"
+      :style="phStyle"
+    >
+      <td v-if="itemTag === 'tr'" :colspan="columns" />
+    </component>
+    <TransitionGroup :tag="tag" name="k-sortable" class="k-sortable__list" :class="classNames?.list" :style="listStyle">
+      <component
+        :is="itemTag"
+        v-for="(item, index) in model"
+        :key="keyOf(item)"
+        v-bind="itemAttrs(item)"
+        class="k-sortable__item"
+        :class="[classNames?.item, { 'has-handle': hasHandle && itemTag !== 'tr' }]"
+        :style="[styles?.item, shiftStyle(item)]"
+        v-on="itemDragOn(item)"
+      >
+        <span
+          v-if="hasHandle && itemTag !== 'tr'"
+          v-bind="handleAttrs"
+          class="k-sortable__handle"
+          :class="classNames?.handle"
+          :style="styles?.handle"
+          v-on="handleDragOn(item)"
+        >
+          <slot name="handle" :item="item" :index="index">
+            <svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.2" /><circle cx="10" cy="4" r="1.2" /><circle cx="6" cy="8" r="1.2" /><circle cx="10" cy="8" r="1.2" /><circle cx="6" cy="12" r="1.2" /><circle cx="10" cy="12" r="1.2" /></svg>
+          </slot>
+        </span>
+        <slot :item="item" :index="index" />
+      </component>
+    </TransitionGroup>
+  </div>
+</template>
+
 <script lang="ts">
 /* 跨列拖拽会话：同 group 实例共享（模块作用域，跨实例可见） */
 interface KSortableCrossSession {
@@ -1284,115 +1393,6 @@ onBeforeUnmount(() => {
   if (scrollIdleTimer) clearTimeout(scrollIdleTimer);
 });
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-
-  <!-- 合并根模式：根节点即排序容器（如 <tbody>），列表项直接作为其子级 -->
-  <template v-else-if="rootTag">
-  <Teleport to="body">
-    <div
-      v-if="showPlaceholder && floatingPh"
-      class="k-sortable__placeholder is-floating"
-      aria-hidden="true"
-      :style="{ left: `${floatingPh.x + (orientation === 'vertical' ? Math.max(0, placeholderInset ?? 0) : 0)}px`, top: `${floatingPh.y}px`, width: `${Math.max(0, floatingPh.w - (orientation === 'vertical' ? Math.max(0, placeholderInset ?? 0) : 0))}px`, height: `${floatingPh.h}px` }"
-    />
-  </Teleport>
-  <TransitionGroup
-    ref="mergedRef"
-    :tag="rootTag"
-    name="k-sortable"
-    v-bind="containerAttrs"
-    class="k-sortable is-merged"
-    :class="[`k-sortable--${orientation}`, { 'is-disabled': disabled, 'is-scrolling': scrolling, 'is-dragging': dragKey !== null || placeholder !== null, 'is-pointer': usePointer, 'is-keyboard-dragging': keyboardKey !== null }, classNames?.root]"
-    :style="styles?.root"
-    v-on="containerOn"
-  >
-    <component
-      :is="itemTag"
-      v-for="(item, index) in model"
-      :key="keyOf(item)"
-      v-bind="itemAttrs(item)"
-      class="k-sortable__item"
-      :class="[classNames?.item, { 'has-handle': hasHandle && itemTag !== 'tr' }]"
-      :style="[styles?.item, shiftStyle(item)]"
-      v-on="itemDragOn(item)"
-    >
-      <span
-        v-if="hasHandle && itemTag !== 'tr'"
-        v-bind="handleAttrs"
-        class="k-sortable__handle"
-        :class="classNames?.handle"
-        :style="styles?.handle"
-        v-on="handleDragOn(item)"
-      >
-        <slot name="handle" :item="item" :index="index">
-          <svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.2" /><circle cx="10" cy="4" r="1.2" /><circle cx="6" cy="8" r="1.2" /><circle cx="10" cy="8" r="1.2" /><circle cx="6" cy="12" r="1.2" /><circle cx="10" cy="12" r="1.2" /></svg>
-        </slot>
-      </span>
-      <slot :item="item" :index="index" />
-    </component>
-    <tr
-      v-if="tailPad && itemTag === 'tr'"
-      :key="'__k-sortable-tail'"
-      class="k-sortable__tail"
-      aria-hidden="true"
-    >
-      <td :colspan="columns" :style="{ height: `${tailPad}px`, padding: 0, border: 0 }" />
-    </tr>
-  </TransitionGroup>
-  </template>
-
-  <div
-    v-else
-    ref="rootEl"
-    v-bind="containerAttrs"
-    class="k-sortable"
-    :class="[`k-sortable--${orientation}`, { 'is-disabled': disabled, 'is-scrolling': scrolling, 'is-dragging': dragKey !== null || placeholder !== null, 'is-pointer': usePointer, 'is-keyboard-dragging': keyboardKey !== null }, classNames?.root]"
-    :style="styles?.root"
-    v-on="containerOn"
-  >
-    <component
-      :is="itemTag"
-      v-if="showPlaceholder && placeholder"
-      class="k-sortable__placeholder"
-      :class="{ 'is-row': itemTag === 'tr' }"
-      aria-hidden="true"
-      :style="phStyle"
-    >
-      <td v-if="itemTag === 'tr'" :colspan="columns" />
-    </component>
-    <TransitionGroup :tag="tag" name="k-sortable" class="k-sortable__list" :class="classNames?.list" :style="listStyle">
-      <component
-        :is="itemTag"
-        v-for="(item, index) in model"
-        :key="keyOf(item)"
-        v-bind="itemAttrs(item)"
-        class="k-sortable__item"
-        :class="[classNames?.item, { 'has-handle': hasHandle && itemTag !== 'tr' }]"
-        :style="[styles?.item, shiftStyle(item)]"
-        v-on="itemDragOn(item)"
-      >
-        <span
-          v-if="hasHandle && itemTag !== 'tr'"
-          v-bind="handleAttrs"
-          class="k-sortable__handle"
-          :class="classNames?.handle"
-          :style="styles?.handle"
-          v-on="handleDragOn(item)"
-        >
-          <slot name="handle" :item="item" :index="index">
-            <svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.2" /><circle cx="10" cy="4" r="1.2" /><circle cx="6" cy="8" r="1.2" /><circle cx="10" cy="8" r="1.2" /><circle cx="6" cy="12" r="1.2" /><circle cx="10" cy="12" r="1.2" /></svg>
-          </slot>
-        </span>
-        <slot :item="item" :index="index" />
-      </component>
-    </TransitionGroup>
-  </div>
-</template>
 
 <style>
 .k-sortable {

@@ -1,3 +1,31 @@
+<template>
+  <Teleport to="body" defer>
+    <div v-if="svc.items.value.length" :class="popupClasses" :data-k-theme="popupTheme" data-part="root" aria-live="polite">
+      <div
+        v-for="it in svc.items.value"
+        :key="it.id"
+        class="k-message"
+        :class="`k-message--${it.type}`"
+        data-part="item"
+        role="status"
+      >
+        <span v-if="it.icon !== null" class="k-message__icon" aria-hidden="true">
+          <svg v-if="it.type === 'loading'" class="k-message__spin" viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <circle cx="8" cy="8" r="6.2" stroke-dasharray="26 13" />
+          </svg>
+          <template v-else-if="it.icon">
+            <component :is="KNode" :node="it.icon" />
+          </template>
+          <svg v-else viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <path :d="ICON_PATH[it.type]" />
+          </svg>
+        </span>
+        <span class="k-message__content"><component :is="KNode" :node="it.content" /></span>
+      </div>
+    </div>
+  </Teleport>
+</template>
+
 <script setup lang="ts">
 import { onBeforeUnmount, watch } from 'vue';
 import { KNode } from '../../utils/vnode';
@@ -46,34 +74,6 @@ onBeforeUnmount(() => {
   timers.clear();
 });
 </script>
-
-<template>
-  <Teleport to="body" defer>
-    <div v-if="svc.items.value.length" :class="popupClasses" :data-k-theme="popupTheme" data-part="root" aria-live="polite">
-      <div
-        v-for="it in svc.items.value"
-        :key="it.id"
-        class="k-message"
-        :class="`k-message--${it.type}`"
-        data-part="item"
-        role="status"
-      >
-        <span v-if="it.icon !== null" class="k-message__icon" aria-hidden="true">
-          <svg v-if="it.type === 'loading'" class="k-message__spin" viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-            <circle cx="8" cy="8" r="6.2" stroke-dasharray="26 13" />
-          </svg>
-          <template v-else-if="it.icon">
-            <component :is="KNode" :node="it.icon" />
-          </template>
-          <svg v-else viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-            <path :d="ICON_PATH[it.type]" />
-          </svg>
-        </span>
-        <span class="k-message__content"><component :is="KNode" :node="it.content" /></span>
-      </div>
-    </div>
-  </Teleport>
-</template>
 
 <style>
 .k-message-list {

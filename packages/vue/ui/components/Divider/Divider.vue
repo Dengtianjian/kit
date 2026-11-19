@@ -1,3 +1,22 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <div
+    v-else
+    data-part="root"
+    :class="[classes, classNames?.root]"
+    :style="styles?.root"
+    role="separator"
+    :aria-orientation="type"
+  >
+    <span v-if="hasText" data-part="text" :class="['k-divider__text', classNames?.text]" :style="styles?.text">
+      <slot />
+    </span>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -73,25 +92,6 @@ defineSlots<{
   render?(scope: KDividerRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <div
-    v-else
-    data-part="root"
-    :class="[classes, classNames?.root]"
-    :style="styles?.root"
-    role="separator"
-    :aria-orientation="type"
-  >
-    <span v-if="hasText" data-part="text" :class="['k-divider__text', classNames?.text]" :style="styles?.text">
-      <slot />
-    </span>
-  </div>
-</template>
 
 <style>
 

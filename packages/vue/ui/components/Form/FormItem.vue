@@ -1,3 +1,36 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <div v-else class="k-form-item" :class="[{ 'has-error': status === 'error' }, classNames?.root]" v-bind="rootAttrs" :style="styles?.root">
+    <label
+      v-if="label != null || $slots.label"
+      data-part="label"
+      class="k-form-item__label"
+      :class="classNames?.label"
+      :style="styles?.label"
+    >
+      <span v-if="isRequired" class="k-form-item__required" aria-hidden="true">*</span>
+      <slot name="label">{{ label }}</slot>
+      <span v-if="form!.colon.value" class="k-form-item__colon">:</span>
+    </label>
+    <div data-part="control" class="k-form-item__control" :class="classNames?.control" :style="styles?.control">
+      <slot />
+      <div
+        v-if="error || extra || $slots.extra"
+        data-part="help"
+        class="k-form-item__help"
+        :class="{ 'is-error': !!error }"
+        :style="styles?.help"
+      >
+        <template v-if="error">{{ error }}</template>
+        <slot v-else name="extra">{{ extra }}</slot>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, provide, ref, useSlots, watch } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -181,39 +214,6 @@ defineSlots<{
   render?(scope: KFormItemRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <div v-else class="k-form-item" :class="[{ 'has-error': status === 'error' }, classNames?.root]" v-bind="rootAttrs" :style="styles?.root">
-    <label
-      v-if="label != null || $slots.label"
-      data-part="label"
-      class="k-form-item__label"
-      :class="classNames?.label"
-      :style="styles?.label"
-    >
-      <span v-if="isRequired" class="k-form-item__required" aria-hidden="true">*</span>
-      <slot name="label">{{ label }}</slot>
-      <span v-if="form!.colon.value" class="k-form-item__colon">:</span>
-    </label>
-    <div data-part="control" class="k-form-item__control" :class="classNames?.control" :style="styles?.control">
-      <slot />
-      <div
-        v-if="error || extra || $slots.extra"
-        data-part="help"
-        class="k-form-item__help"
-        :class="{ 'is-error': !!error }"
-        :style="styles?.help"
-      >
-        <template v-if="error">{{ error }}</template>
-        <slot v-else name="extra">{{ extra }}</slot>
-      </div>
-    </div>
-  </div>
-</template>
 
 <style>
 .k-form-item {

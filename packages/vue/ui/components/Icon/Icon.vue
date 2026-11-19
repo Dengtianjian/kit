@@ -1,3 +1,14 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <span v-else :class="classes" v-bind="rootAttrs">
+    <component :is="component" v-if="component" />
+    <slot v-else />
+  </span>
+</template>
+
 <script setup lang="ts">
 import { computed, useAttrs, useSlots } from 'vue';
 import type { Component, VNodeChild } from 'vue';
@@ -70,17 +81,6 @@ defineSlots<{
 }>();
 </script>
 
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <span v-else :class="classes" v-bind="rootAttrs">
-    <component :is="component" v-if="component" />
-    <slot v-else />
-  </span>
-</template>
-
 <style>
 
 .k-icon {
@@ -99,6 +99,10 @@ defineSlots<{
   height: 1em;
   fill: currentcolor;
   display: block;
+}
+/* 描边图标（Tabler 等 fill="none"）保持空心，不被上面的 fill 覆盖 */
+.k-icon svg[fill='none'] {
+  fill: none;
 }
 
 .k-icon--xs { font-size: var(--k-size-icon-xs); }

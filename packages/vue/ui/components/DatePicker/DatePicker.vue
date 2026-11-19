@@ -1,557 +1,3 @@
-<script setup lang="ts">
-import { computed, inject, nextTick, onMounted, ref, useId, useSlots, watch } from 'vue';
-import type { CSSProperties, Ref, VNodeChild } from 'vue';
-import type { Dayjs } from 'dayjs';
-import { usePopupHost, useOverlayPosition, usePopupDismiss } from '../../composables/usePopup';
-import { useCustomRender } from '../../composables/useCustomRender';
-import type { KRenderFn, KOnPack } from '../../composables/useCustomRender';
-import { FORM_ITEM_KEY } from '../Form/context';
-import {
-  kDayjs,
-  formatPicker,
-  startOfPicker,
-  isSamePicker,
-  addPicker,
-  commitLevel,
-  levelPicker,
-  decadeOf,
-  panelTitle,
-  buildRows,
-  WEEKDAYS,
-} from '../../utils/date';
-import type { KPickerMode, KDateViewLevel, KDateCell } from '../../utils/date';
-
-defineOptions({ name: 'KDatePicker' });
-
-export type KDatePickerNavigateDir = 'superPrev' | 'prev' | 'next' | 'superNext';
-
-/** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
-export interface KDatePickerRenderScope {
-  open: boolean;
-  /** 面板内联常驻（无触发器/弹层） */
-  inline: boolean;
-  /** v-model 毫秒时间戳（周期起点） */
-  value: number | null;
-  picker: KPickerMode;
-  format: string | undefined;
-  placeholder: string;
-  disabled: boolean | undefined;
-  size: 'xs' | 'sm' | 'md' | 'lg';
-  variant: 'outlined' | 'filled' | 'borderless';
-  /** 合并链：prop > FormItem 校验态 */
-  status: 'error' | 'warning' | undefined;
-  /** 当前视图周期内任一时间戳（面板标题/网格由它推） */
-  viewDate: number;
-  viewLevel: KDateViewLevel;
-  rows: KDateCell[][];
-  /** 键盘焦点单元格周期起点时间戳（与 hover 分离） */
-  focusedDate: number | null;
-  flipped: boolean;
-  hasValue: boolean;
-  displayText: string;
-  showClear: boolean;
-  titleText: string;
-  weekdays: string[];
-  todayDisabled: boolean;
-  canDrillUp: boolean;
-  showSuperNav: boolean;
-  rootEl: Ref<HTMLElement | null>;
-  triggerEl: Ref<HTMLInputElement | null>;
-  popupEl: Ref<HTMLElement | null>;
-  teleportTarget: HTMLElement | string;
-  popupStyle: CSSProperties;
-  rootAttrs: Record<string, unknown>;
-  /** keydown（键盘导航）+ focusout（焦点离场关面板） */
-  rootOn: KOnPack;
-  /** 只读 input 语义包：combobox aria / value / placeholder / disabled / readonly / id */
-  triggerAttrs: Record<string, unknown>;
-  triggerOn: KOnPack;
-  /** 弹层出口包：scope 类 + data-part/picker/level/placement + data-k-theme + 定位 style（视觉壳类不在内） */
-  dropAttrs: Record<string, unknown>;
-  superPrevOn: KOnPack;
-  prevOn: KOnPack;
-  titleOn: KOnPack;
-  nextOn: KOnPack;
-  superNextOn: KOnPack;
-  cellAttrs: (cell: KDateCell) => Record<string, unknown>;
-  cellOn: (cell: KDateCell) => KOnPack;
-  todayOn: KOnPack;
-  /** 清除按钮包（mousedown prevent 防抢焦点 + 清值） */
-  clearOn: KOnPack;
-  setOpen: (v: boolean) => void;
-  toggleOpen: () => void;
-  navigate: (dir: KDatePickerNavigateDir) => void;
-  setViewLevel: (level: KDateViewLevel) => void;
-  pick: (cell: KDateCell) => void;
-  clear: () => void;
-  goToday: () => void;
-  focus: () => void;
-  blur: () => void;
-  slots: ReturnType<typeof useSlots>;
-}
-
-type DatePickerPart =
-  | 'root'
-  | 'trigger'
-  | 'suffix'
-  | 'panel'
-  | 'header'
-  | 'grid'
-  | 'cell'
-  | 'footer';
-
-interface KDatePickerProps {
-  picker?: KPickerMode;
-  size?: 'xs' | 'sm' | 'md' | 'lg';
-  variant?: 'outlined' | 'filled' | 'borderless';
-  status?: 'error' | 'warning';
-  placeholder?: string;
-  disabled?: boolean;
-  clearable?: boolean;
-  /** 面板内联常驻渲染（无触发器与弹层；方向键/Enter 在面板上直接可用） */
-  inline?: boolean;
-  /** 展示格式（dayjs format；缺省按 picker 取 PICKER_FORMAT，week 用 weekYear 防跨年错位） */
-  format?: string;
-  /** 可选范围下/上限（毫秒时间戳或可解析字符串），按 picker 粒度比较 */
-  min?: number | string;
-  max?: number | string;
-  /** 禁用判定：入参 = 当前面板粒度的周期起点（date 层逐日、month 层逐月/季、year 层逐年） */
-  disabledDate?: (date: Dayjs) => boolean;
-  id?: string;
-  /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换（含 Teleport/Transition） */
-  render?: KRenderFn<KDatePickerRenderScope>;
-  classNames?: Partial<Record<DatePickerPart, string>>;
-  styles?: Partial<Record<DatePickerPart, CSSProperties>>;
-}
-
-const props = withDefaults(defineProps<KDatePickerProps>(), {
-  picker: 'date',
-  size: 'md',
-  variant: 'outlined',
-});
-
-const emit = defineEmits<{
-  change: [value: number | null];
-  focus: [e: FocusEvent];
-  blur: [e: FocusEvent];
-  panelChange: [view: number, level: KDateViewLevel];
-  clear: [];
-}>();
-
-const model = defineModel<number | null>({ default: null });
-const slots = useSlots();
-const uid = useId();
-
-const formItem = inject(FORM_ITEM_KEY, null);
-const effectiveStatus = computed(() => props.status ?? formItem?.status.value);
-
-const rootEl = ref<HTMLElement | null>(null);
-const triggerEl = ref<HTMLInputElement | null>(null);
-const popupEl = ref<HTMLElement | null>(null);
-const open = ref(false);
-const viewTs = ref(Date.now());
-const viewLevel = ref<KDateViewLevel>(commitLevel(props.picker));
-const focusedTs = ref<number | null>(null);
-
-const view = computed(() => kDayjs(viewTs.value));
-const valueD = computed(() => (model.value == null ? null : kDayjs(model.value)));
-const hasValue = computed(() => model.value != null);
-const displayText = computed(() =>
-  valueD.value ? formatPicker(valueD.value, props.picker, props.format) : '',
-);
-const showClear = computed(() => props.clearable && hasValue.value && !props.disabled);
-/** 弹层开或 inline 常驻：面板渲染与网格交互的真相源 */
-const panelVisible = computed(() => props.inline || open.value);
-
-const PLACEHOLDER: Record<KPickerMode, string> = {
-  date: '请选择日期',
-  week: '请选择周',
-  month: '请选择月份',
-  quarter: '请选择季度',
-  year: '请选择年份',
-};
-const resolvedPlaceholder = computed(() => props.placeholder ?? PLACEHOLDER[props.picker]);
-
-const minD = computed(() => (props.min != null ? kDayjs(props.min) : null));
-const maxD = computed(() => (props.max != null ? kDayjs(props.max) : null));
-
-/** 禁用判定统一走周期起点：disabledDate + min/max 都按当前面板粒度 */
-function isDisabledCell(d: Dayjs, lp: KPickerMode): boolean {
-  const s = startOfPicker(d, lp).valueOf();
-  if (props.disabledDate?.(startOfPicker(d, lp))) return true;
-  if (minD.value && s < startOfPicker(minD.value, lp).valueOf()) return true;
-  if (maxD.value && s > startOfPicker(maxD.value, lp).valueOf()) return true;
-  return false;
-}
-
-const rows = computed(() =>
-  buildRows(view.value, viewLevel.value, props.picker, {
-    value: valueD.value,
-    disabled: (d) => isDisabledCell(d, levelPicker(viewLevel.value, props.picker)),
-  }),
-);
-const flatRows = computed(() => rows.value.flat());
-const titleText = computed(() => panelTitle(view.value, viewLevel.value));
-const canDrillUp = computed(() => viewLevel.value !== 'year');
-const showSuperNav = computed(() => viewLevel.value === 'date');
-const todayDisabled = computed(() => isDisabledCell(kDayjs(), props.picker));
-
-const rootClasses = computed(() => [
-  'k-datepicker',
-  `k-datepicker--${props.size}`,
-  `k-datepicker--${props.variant}`,
-  {
-    [`k-datepicker--${effectiveStatus.value}`]: effectiveStatus.value,
-    'is-disabled': props.disabled,
-    'is-open': open.value,
-    'k-datepicker--inline': props.inline,
-  },
-]);
-
-/* ---------- 弹层基座：容器契约 + bottomLeft 定位（翻转/scroll/resize 跟随）+ 外点/Esc 关闭 ---------- */
-const { teleportTarget, popupClasses, popupTheme } = usePopupHost();
-const popupVisible = computed(() => open.value && !props.inline);
-const { popupStyle, actualPlacement, place } = useOverlayPosition({
-  anchor: rootEl,
-  popup: popupEl,
-  visible: popupVisible,
-  placement: () => 'bottomLeft',
-  target: teleportTarget,
-  gap: 4,
-});
-const flipped = computed(() => actualPlacement.value.startsWith('top'));
-usePopupDismiss(popupVisible, () => setOpen(false), () => [rootEl.value, popupEl.value]);
-// 下钻/回退换网格高度：上翻态需重新落位，否则面板底边脱离触发器
-watch(viewLevel, async () => {
-  if (!open.value) return;
-  await nextTick();
-  place();
-});
-
-function emitPanelChange() {
-  emit('panelChange', viewTs.value, viewLevel.value);
-}
-
-function setOpen(v: boolean) {
-  if (props.inline) return; // inline 面板常驻，无开合语义
-  if (props.disabled) return;
-  if (v === open.value) return;
-  open.value = v;
-  if (v) {
-    viewTs.value = model.value ?? Date.now();
-    viewLevel.value = commitLevel(props.picker);
-    focusedTs.value = startOfPicker(kDayjs(model.value ?? undefined), props.picker).valueOf();
-  } else {
-    triggerEl.value?.blur();
-  }
-}
-function toggleOpen() {
-  setOpen(!open.value);
-}
-
-function setViewLevel(level: KDateViewLevel) {
-  viewLevel.value = level;
-  focusedTs.value = startOfPicker(
-    kDayjs(focusedTs.value ?? undefined),
-    levelPicker(level, props.picker),
-  ).valueOf();
-  emitPanelChange();
-}
-
-/** 视图跟随键盘焦点：焦点走出当前周期时视图翻页 */
-function ensureView(f: Dayjs) {
-  const v = view.value;
-  const out =
-    viewLevel.value === 'date'
-      ? f.month() !== v.month() || f.year() !== v.year()
-      : viewLevel.value === 'month'
-        ? f.year() !== v.year()
-        : decadeOf(f) !== decadeOf(v);
-  if (out) {
-    viewTs.value = f.valueOf();
-    emitPanelChange();
-  }
-}
-
-function navigate(dir: KDatePickerNavigateDir) {
-  const sign = dir === 'superPrev' || dir === 'prev' ? -1 : 1;
-  const superDir = dir === 'superPrev' || dir === 'superNext';
-  const v = view.value;
-  const amount = viewLevel.value === 'date' ? 1 : viewLevel.value === 'month' ? (superDir ? 10 : 1) : superDir ? 100 : 10;
-  const unit = viewLevel.value === 'date' ? (superDir ? 'year' : 'month') : 'year';
-  viewTs.value = v.add(sign * amount, unit).valueOf();
-  // 焦点随视图平移（antd 同款）：否则翻页后 Enter 找不到焦点格成空操作
-  if (focusedTs.value != null) {
-    focusedTs.value = kDayjs(focusedTs.value).add(sign * amount, unit).valueOf();
-  }
-  emitPanelChange();
-}
-
-function pick(cell: KDateCell) {
-  if (props.disabled || cell.disabled) return;
-  const commit = commitLevel(props.picker);
-  if (viewLevel.value !== commit) {
-    // 高层面板点格 = 下钻（year→month→date），不落值
-    viewTs.value = cell.ts;
-    setViewLevel(viewLevel.value === 'year' ? 'month' : 'date');
-    return;
-  }
-  model.value = startOfPicker(cell.date, props.picker).valueOf();
-  emit('change', model.value);
-  formItem?.onFieldChange();
-  setOpen(false);
-}
-
-function clear() {
-  if (props.disabled || !hasValue.value) return;
-  model.value = null;
-  emit('change', null);
-  emit('clear');
-  formItem?.onFieldChange();
-}
-
-function goToday() {
-  if (props.disabled || todayDisabled.value) return;
-  model.value = startOfPicker(kDayjs(), props.picker).valueOf();
-  emit('change', model.value);
-  formItem?.onFieldChange();
-  setOpen(false);
-}
-
-function onFocusout(e: FocusEvent) {
-  const t = e.relatedTarget as Node | null;
-  if (t && !rootEl.value?.contains(t) && !popupEl.value?.contains(t)) setOpen(false);
-}
-
-/* ---------- 键盘：焦点恒留触发器，方向键按面板粒度移动，Enter 落值/下钻 ---------- */
-function onKeydown(e: KeyboardEvent) {
-  if (props.disabled || e.isComposing) return;
-  if (!open.value && !props.inline) {
-    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      setOpen(true);
-    }
-    return;
-  }
-  const lp = levelPicker(viewLevel.value, props.picker);
-  const cols =
-    viewLevel.value === 'date' ? 7 : viewLevel.value === 'month' && props.picker === 'quarter' ? 4 : 3;
-  const move = (n: number) => {
-    e.preventDefault();
-    if (focusedTs.value == null) return;
-    const f = addPicker(kDayjs(focusedTs.value), lp, n);
-    focusedTs.value = f.valueOf();
-    ensureView(f);
-  };
-  switch (e.key) {
-    case 'ArrowLeft':
-      move(-1);
-      break;
-    case 'ArrowRight':
-      move(1);
-      break;
-    case 'ArrowUp':
-      move(-cols);
-      break;
-    case 'ArrowDown':
-      move(cols);
-      break;
-    case 'Enter':
-    case ' ': {
-      e.preventDefault();
-      if (focusedTs.value == null) break;
-      const f = kDayjs(focusedTs.value);
-      const cell = flatRows.value.find((c) => isSamePicker(c.date, f, lp));
-      if (cell) pick(cell);
-      break;
-    }
-    case 'PageUp':
-      e.preventDefault();
-      navigate(e.shiftKey ? 'superPrev' : 'prev');
-      break;
-    case 'PageDown':
-      e.preventDefault();
-      navigate(e.shiftKey ? 'superNext' : 'next');
-      break;
-    case 'Escape':
-      if (!props.inline) {
-        e.stopPropagation();
-        setOpen(false);
-      }
-      break;
-  }
-}
-
-watch(
-  () => props.picker,
-  (p) => {
-    viewLevel.value = commitLevel(p);
-  },
-);
-onMounted(() => {
-  if (!props.inline) return;
-  viewTs.value = model.value ?? Date.now();
-  viewLevel.value = commitLevel(props.picker);
-  focusedTs.value = startOfPicker(kDayjs(model.value ?? undefined), props.picker).valueOf();
-});
-// inline：外部改值时视图跟随
-watch(model, (v) => {
-  if (props.inline && v != null) viewTs.value = v;
-});
-
-/* ---------- headless 绑定包：事件/语义 attrs 收进 script，默认模板与自绘共用 ---------- */
-const rootAttrs = computed(() => ({
-  'data-part': 'root',
-  tabindex: props.inline ? 0 : undefined,
-  role: props.inline ? 'group' : undefined,
-  'aria-label': props.inline ? '日期选择' : undefined,
-}));
-const rootOn: KOnPack = {
-  keydown: (e) => onKeydown(e as KeyboardEvent),
-  focusout: (e) => onFocusout(e as FocusEvent),
-};
-const triggerAttrs = computed(() => ({
-  'data-part': 'trigger',
-  role: 'combobox',
-  'aria-expanded': open.value,
-  'aria-haspopup': 'dialog',
-  'aria-controls': open.value ? `${uid}-panel` : undefined,
-  'aria-disabled': props.disabled || undefined,
-  readonly: true,
-  autocomplete: 'off',
-  value: displayText.value,
-  placeholder: resolvedPlaceholder.value,
-  disabled: props.disabled || undefined,
-  id: props.id,
-}));
-const triggerOn: KOnPack = {
-  click: () => setOpen(true),
-  focus: (e) => emit('focus', e as FocusEvent),
-  blur: (e) => {
-    emit('blur', e as FocusEvent);
-    if (!open.value) formItem?.onFieldBlur();
-  },
-};
-
-const dropAttrs = computed(() => ({
-  id: `${uid}-panel`,
-  class: popupClasses.value,
-  'data-part': 'panel',
-  'data-picker': props.picker,
-  'data-level': viewLevel.value,
-  'data-placement': props.inline ? undefined : flipped.value ? 'top' : 'bottom',
-  'data-k-theme': popupTheme.value,
-  style: props.inline ? undefined : popupStyle.value,
-}));
-
-const keepFocus = (e: Event) => e.preventDefault();
-const superPrevOn: KOnPack = { click: () => navigate('superPrev'), mousedown: keepFocus };
-const prevOn: KOnPack = { click: () => navigate('prev'), mousedown: keepFocus };
-const nextOn: KOnPack = { click: () => navigate('next'), mousedown: keepFocus };
-const superNextOn: KOnPack = { click: () => navigate('superNext'), mousedown: keepFocus };
-const titleOn: KOnPack = {
-  click: () => {
-    if (canDrillUp.value) setViewLevel(viewLevel.value === 'date' ? 'month' : 'year');
-  },
-  mousedown: keepFocus,
-};
-const todayOn: KOnPack = { click: () => goToday(), mousedown: keepFocus };
-const clearOn: KOnPack = {
-  mousedown: (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    clear();
-  },
-};
-
-const cellAttrs = (cell: KDateCell) => {
-  const lp = levelPicker(viewLevel.value, props.picker);
-  return {
-    'data-part': 'cell',
-    role: 'gridcell',
-    'aria-selected': cell.selected,
-    'aria-disabled': cell.disabled || undefined,
-    'data-today': cell.today || undefined,
-    'data-selected': cell.selected || undefined,
-    'data-disabled': cell.disabled || undefined,
-    'data-outside': !cell.inView || undefined,
-    'data-focused':
-      (focusedTs.value != null && isSamePicker(cell.date, kDayjs(focusedTs.value), lp)) || undefined,
-  };
-};
-const cellOn = (cell: KDateCell): KOnPack => ({ click: () => pick(cell) });
-
-const focus = () => (props.inline ? rootEl.value : triggerEl.value)?.focus();
-const blur = () => (props.inline ? rootEl.value : triggerEl.value)?.blur();
-
-const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KDatePickerRenderScope>(
-  () => props.render,
-  () => ({
-    open: open.value,
-    inline: props.inline,
-    value: model.value,
-    picker: props.picker,
-    format: props.format,
-    placeholder: resolvedPlaceholder.value,
-    disabled: props.disabled,
-    size: props.size,
-    variant: props.variant,
-    status: effectiveStatus.value,
-    viewDate: viewTs.value,
-    viewLevel: viewLevel.value,
-    rows: rows.value,
-    focusedDate: focusedTs.value,
-    flipped: flipped.value,
-    hasValue: hasValue.value,
-    displayText: displayText.value,
-    showClear: showClear.value,
-    titleText: titleText.value,
-    weekdays: WEEKDAYS,
-    todayDisabled: todayDisabled.value,
-    canDrillUp: canDrillUp.value,
-    showSuperNav: showSuperNav.value,
-    rootEl,
-    triggerEl,
-    popupEl,
-    teleportTarget: teleportTarget.value,
-    popupStyle: popupStyle.value,
-    rootAttrs: rootAttrs.value,
-    rootOn,
-    triggerAttrs: triggerAttrs.value,
-    triggerOn,
-    dropAttrs: dropAttrs.value,
-    superPrevOn,
-    prevOn,
-    titleOn,
-    nextOn,
-    superNextOn,
-    cellAttrs,
-    cellOn,
-    todayOn,
-    clearOn,
-    setOpen,
-    toggleOpen,
-    navigate,
-    setViewLevel,
-    pick,
-    clear,
-    goToday,
-    focus,
-    blur,
-    slots,
-  }),
-);
-
-defineSlots<{
-  suffix?(): VNodeChild;
-  /** 面板脚注（今天/清除按钮行之下） */
-  extraFooter?(): VNodeChild;
-  render?(scope: KDatePickerRenderScope): VNodeChild;
-}>();
-
-defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(false), triggerEl });
-</script>
-
 <template>
   <template v-if="hasCustomRender">
     <slot v-if="$slots.render" name="render" v-bind="renderScope" />
@@ -655,6 +101,36 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
               </div>
             </div>
           </div>
+          <div v-if="showTime" class="k-datepicker__time">
+            <span class="k-datepicker__time-label">时间</span>
+            <select
+              class="k-datepicker__time-select"
+              aria-label="小时"
+              :disabled="draftTs == null"
+              :value="timePart('hour')"
+              @change="onTimeSelect('hour', $event)"
+            >
+              <option v-for="h in HOURS" :key="h" :value="h" :disabled="disabledTimeCfg.disabledHours?.includes(h)">{{ String(h).padStart(2, '0') }}</option>
+            </select>
+            <select
+              class="k-datepicker__time-select"
+              aria-label="分钟"
+              :disabled="draftTs == null"
+              :value="timePart('minute')"
+              @change="onTimeSelect('minute', $event)"
+            >
+              <option v-for="m in MINUTES" :key="m" :value="m" :disabled="disabledTimeCfg.disabledMinutes?.includes(m)">{{ String(m).padStart(2, '0') }}</option>
+            </select>
+            <select
+              class="k-datepicker__time-select"
+              aria-label="秒"
+              :disabled="draftTs == null"
+              :value="timePart('second')"
+              @change="onTimeSelect('second', $event)"
+            >
+              <option v-for="sec in SECONDS" :key="sec" :value="sec" :disabled="disabledTimeCfg.disabledSeconds?.includes(sec)">{{ String(sec).padStart(2, '0') }}</option>
+            </select>
+          </div>
           <div
             data-part="footer"
             class="k-datepicker__footer"
@@ -662,7 +138,10 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
             :style="styles?.footer"
           >
             <button type="button" class="k-datepicker__today" :disabled="todayDisabled" v-on="todayOn">今天</button>
-            <button type="button" class="k-datepicker__clear-btn" :disabled="!hasValue" @mousedown.prevent @click="clear">清除</button>
+            <span class="k-datepicker__footer-actions">
+              <button v-if="showTime" type="button" class="k-datepicker__confirm" :disabled="!canConfirmTime" @mousedown.prevent v-on="confirmOn">确定</button>
+              <button type="button" class="k-datepicker__clear-btn" :disabled="!hasValue" @mousedown.prevent @click="clear">清除</button>
+            </span>
           </div>
           <div v-if="$slots.extraFooter" class="k-datepicker__extra-footer">
             <slot name="extraFooter" />
@@ -673,6 +152,665 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
     </span>
   </template>
 </template>
+
+<script setup lang="ts">
+import { computed, inject, nextTick, onMounted, ref, useId, useSlots, watch } from 'vue';
+import type { CSSProperties, Ref, VNodeChild } from 'vue';
+import type { Dayjs } from 'dayjs';
+import { usePopupHost, useOverlayPosition, usePopupDismiss } from '../../composables/usePopup';
+import { useCustomRender } from '../../composables/useCustomRender';
+import type { KRenderFn, KOnPack } from '../../composables/useCustomRender';
+import { FORM_ITEM_KEY } from '../Form/context';
+import {
+  kDayjs,
+  formatPicker,
+  startOfPicker,
+  isSamePicker,
+  addPicker,
+  commitLevel,
+  levelPicker,
+  decadeOf,
+  panelTitle,
+  buildRows,
+  WEEKDAYS,
+} from '../../utils/date';
+import type { KPickerMode, KDateViewLevel, KDateCell } from '../../utils/date';
+
+defineOptions({ name: 'KDatePicker' });
+
+export type KDatePickerNavigateDir = 'superPrev' | 'prev' | 'next' | 'superNext';
+
+/** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
+export interface KDatePickerRenderScope {
+  open: boolean;
+  /** 面板内联常驻（无触发器/弹层） */
+  inline: boolean;
+  /** v-model 毫秒时间戳（周期起点） */
+  value: number | null;
+  picker: KPickerMode;
+  format: string | undefined;
+  placeholder: string;
+  disabled: boolean | undefined;
+  size: 'xs' | 'sm' | 'md' | 'lg';
+  variant: 'outlined' | 'filled' | 'borderless';
+  /** 合并链：prop > FormItem 校验态 */
+  status: 'error' | 'warning' | undefined;
+  /** 当前视图周期内任一时间戳（面板标题/网格由它推） */
+  viewDate: number;
+  viewLevel: KDateViewLevel;
+  rows: KDateCell[][];
+  /** 键盘焦点单元格周期起点时间戳（与 hover 分离） */
+  focusedDate: number | null;
+  flipped: boolean;
+  hasValue: boolean;
+  displayText: string;
+  showTime: boolean;
+  /** showTime 编辑中的草稿时间戳 */
+  draftDate: number | null;
+  canConfirmTime: boolean;
+  timePart: (unit: 'hour' | 'minute' | 'second') => number;
+  updateTimePart: (unit: 'hour' | 'minute' | 'second', value: number) => void;
+  hours: number[];
+  minutes: number[];
+  seconds: number[];
+  disabledTime: KDatePickerDisabledTime;
+  confirmTime: () => void;
+  confirmOn: KOnPack;
+  showClear: boolean;
+  titleText: string;
+  weekdays: string[];
+  todayDisabled: boolean;
+  canDrillUp: boolean;
+  showSuperNav: boolean;
+  rootEl: Ref<HTMLElement | null>;
+  triggerEl: Ref<HTMLInputElement | null>;
+  popupEl: Ref<HTMLElement | null>;
+  teleportTarget: HTMLElement | string;
+  popupStyle: CSSProperties;
+  rootAttrs: Record<string, unknown>;
+  /** keydown（键盘导航）+ focusout（焦点离场关面板） */
+  rootOn: KOnPack;
+  /** 只读 input 语义包：combobox aria / value / placeholder / disabled / readonly / id */
+  triggerAttrs: Record<string, unknown>;
+  triggerOn: KOnPack;
+  /** 弹层出口包：scope 类 + data-part/picker/level/placement + data-k-theme + 定位 style（视觉壳类不在内） */
+  dropAttrs: Record<string, unknown>;
+  superPrevOn: KOnPack;
+  prevOn: KOnPack;
+  titleOn: KOnPack;
+  nextOn: KOnPack;
+  superNextOn: KOnPack;
+  cellAttrs: (cell: KDateCell) => Record<string, unknown>;
+  cellOn: (cell: KDateCell) => KOnPack;
+  todayOn: KOnPack;
+  /** 清除按钮包（mousedown prevent 防抢焦点 + 清值） */
+  clearOn: KOnPack;
+  setOpen: (v: boolean) => void;
+  toggleOpen: () => void;
+  navigate: (dir: KDatePickerNavigateDir) => void;
+  setViewLevel: (level: KDateViewLevel) => void;
+  pick: (cell: KDateCell) => void;
+  clear: () => void;
+  goToday: () => void;
+  focus: () => void;
+  blur: () => void;
+  slots: ReturnType<typeof useSlots>;
+}
+
+export interface KDatePickerDisabledTime {
+  disabledHours?: number[];
+  disabledMinutes?: number[];
+  disabledSeconds?: number[];
+}
+
+type DatePickerPart =
+  | 'root'
+  | 'trigger'
+  | 'suffix'
+  | 'panel'
+  | 'header'
+  | 'grid'
+  | 'cell'
+  | 'footer';
+
+interface KDatePickerProps {
+  picker?: KPickerMode;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  variant?: 'outlined' | 'filled' | 'borderless';
+  status?: 'error' | 'warning';
+  placeholder?: string;
+  disabled?: boolean;
+  clearable?: boolean;
+  /** 面板内联常驻渲染（无触发器与弹层；方向键/Enter 在面板上直接可用） */
+  inline?: boolean;
+  /** 展示格式（dayjs format；缺省按 picker 取 PICKER_FORMAT，week 用 weekYear 防跨年错位） */
+  format?: string;
+  /** 选择时分秒：点日期只落草稿，需点「确定」提交；默认格式追加 HH:mm:ss */
+  showTime?: boolean;
+  /** 时间禁用项（按当前草稿日期返回时/分/秒黑名单） */
+  disabledTime?: (date: Dayjs) => KDatePickerDisabledTime;
+  /** 可选范围下/上限（毫秒时间戳或可解析字符串），按 picker 粒度比较 */
+  min?: number | string;
+  max?: number | string;
+  /** 禁用判定：入参 = 当前面板粒度的周期起点（date 层逐日、month 层逐月/季、year 层逐年） */
+  disabledDate?: (date: Dayjs) => boolean;
+  id?: string;
+  /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换（含 Teleport/Transition） */
+  render?: KRenderFn<KDatePickerRenderScope>;
+  classNames?: Partial<Record<DatePickerPart, string>>;
+  styles?: Partial<Record<DatePickerPart, CSSProperties>>;
+}
+
+const props = withDefaults(defineProps<KDatePickerProps>(), {
+  picker: 'date',
+  size: 'md',
+  variant: 'outlined',
+  showTime: false,
+});
+
+const emit = defineEmits<{
+  change: [value: number | null];
+  focus: [e: FocusEvent];
+  blur: [e: FocusEvent];
+  panelChange: [view: number, level: KDateViewLevel];
+  clear: [];
+}>();
+
+const model = defineModel<number | null>({ default: null });
+const slots = useSlots();
+const uid = useId();
+
+const formItem = inject(FORM_ITEM_KEY, null);
+const effectiveStatus = computed(() => props.status ?? formItem?.status.value);
+
+const rootEl = ref<HTMLElement | null>(null);
+const triggerEl = ref<HTMLInputElement | null>(null);
+const popupEl = ref<HTMLElement | null>(null);
+const open = ref(false);
+const viewTs = ref(Date.now());
+const viewLevel = ref<KDateViewLevel>(commitLevel(props.picker));
+const focusedTs = ref<number | null>(null);
+const draftTs = ref<number | null>(null);
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const MINUTES = Array.from({ length: 60 }, (_, i) => i);
+const SECONDS = Array.from({ length: 60 }, (_, i) => i);
+
+const view = computed(() => kDayjs(viewTs.value));
+const valueD = computed(() => (model.value == null ? null : kDayjs(model.value)));
+const hasValue = computed(() => model.value != null);
+const draftD = computed(() => (draftTs.value == null ? null : kDayjs(draftTs.value)));
+const displayValue = computed(() =>
+  panelVisible.value && props.showTime && draftD.value ? draftD.value : valueD.value,
+);
+const displayText = computed(() =>
+  displayValue.value
+    ? formatPicker(
+        displayValue.value,
+        props.picker,
+        props.format ?? (props.showTime ? 'YYYY-MM-DD HH:mm:ss' : undefined),
+      )
+    : '',
+);
+const showClear = computed(() => props.clearable && hasValue.value && !props.disabled);
+/** 弹层开或 inline 常驻：面板渲染与网格交互的真相源 */
+const panelVisible = computed(() => props.inline || open.value);
+
+const PLACEHOLDER: Record<KPickerMode, string> = {
+  date: '请选择日期',
+  week: '请选择周',
+  month: '请选择月份',
+  quarter: '请选择季度',
+  year: '请选择年份',
+};
+const resolvedPlaceholder = computed(
+  () => props.placeholder ?? (props.showTime ? '请选择日期时间' : PLACEHOLDER[props.picker]),
+);
+
+const minD = computed(() => (props.min != null ? kDayjs(props.min) : null));
+const maxD = computed(() => (props.max != null ? kDayjs(props.max) : null));
+
+/** 禁用判定统一走周期起点：disabledDate + min/max 都按当前面板粒度 */
+function isDisabledCell(d: Dayjs, lp: KPickerMode): boolean {
+  const s = startOfPicker(d, lp).valueOf();
+  if (props.disabledDate?.(startOfPicker(d, lp))) return true;
+  if (minD.value && s < startOfPicker(minD.value, lp).valueOf()) return true;
+  if (maxD.value && s > startOfPicker(maxD.value, lp).valueOf()) return true;
+  return false;
+}
+
+const rows = computed(() =>
+  buildRows(view.value, viewLevel.value, props.picker, {
+    value: props.showTime ? (draftD.value ?? valueD.value) : valueD.value,
+    disabled: (d) => isDisabledCell(d, levelPicker(viewLevel.value, props.picker)),
+  }),
+);
+const disabledTimeCfg = computed<KDatePickerDisabledTime>(() => {
+  if (!props.showTime || !draftD.value) return {};
+  return props.disabledTime?.(draftD.value.startOf('day')) ?? {};
+});
+const canConfirmTime = computed(() => props.showTime && draftTs.value != null);
+
+function timePart(unit: 'hour' | 'minute' | 'second'): number {
+  const d = draftD.value;
+  if (!d) return 0;
+  return unit === 'hour' ? d.hour() : unit === 'minute' ? d.minute() : d.second();
+}
+
+function updateTimePart(unit: 'hour' | 'minute' | 'second', value: number) {
+  if (draftTs.value == null || Number.isNaN(value)) return;
+  const d = kDayjs(draftTs.value);
+  draftTs.value = (unit === 'hour' ? d.hour(value) : unit === 'minute' ? d.minute(value) : d.second(value)).valueOf();
+}
+
+function onTimeSelect(unit: 'hour' | 'minute' | 'second', event: Event) {
+  updateTimePart(unit, Number((event.target as HTMLSelectElement).value));
+}
+
+function confirmTime() {
+  if (!props.showTime || draftTs.value == null) return;
+  model.value = draftTs.value;
+  emit('change', model.value);
+  formItem?.onFieldChange();
+  if (!props.inline) setOpen(false);
+}
+const flatRows = computed(() => rows.value.flat());
+const titleText = computed(() => panelTitle(view.value, viewLevel.value));
+const canDrillUp = computed(() => viewLevel.value !== 'year');
+const showSuperNav = computed(() => viewLevel.value === 'date');
+const todayDisabled = computed(() => isDisabledCell(kDayjs(), props.picker));
+
+const rootClasses = computed(() => [
+  'k-datepicker',
+  `k-datepicker--${props.size}`,
+  `k-datepicker--${props.variant}`,
+  {
+    [`k-datepicker--${effectiveStatus.value}`]: effectiveStatus.value,
+    'is-disabled': props.disabled,
+    'is-open': open.value,
+    'k-datepicker--inline': props.inline,
+  },
+]);
+
+/* ---------- 弹层基座：容器契约 + bottomLeft 定位（翻转/scroll/resize 跟随）+ 外点/Esc 关闭 ---------- */
+const { teleportTarget, popupClasses, popupTheme } = usePopupHost();
+const popupVisible = computed(() => open.value && !props.inline);
+const { popupStyle, actualPlacement, place } = useOverlayPosition({
+  anchor: rootEl,
+  popup: popupEl,
+  visible: popupVisible,
+  placement: () => 'bottomLeft',
+  target: teleportTarget,
+  gap: 4,
+});
+const flipped = computed(() => actualPlacement.value.startsWith('top'));
+usePopupDismiss(popupVisible, () => setOpen(false), () => [rootEl.value, popupEl.value]);
+// 下钻/回退换网格高度：上翻态需重新落位，否则面板底边脱离触发器
+watch(viewLevel, async () => {
+  if (!open.value) return;
+  await nextTick();
+  place();
+});
+
+function emitPanelChange() {
+  emit('panelChange', viewTs.value, viewLevel.value);
+}
+
+function setOpen(v: boolean) {
+  if (props.inline) return; // inline 面板常驻，无开合语义
+  if (props.disabled) return;
+  if (v === open.value) return;
+  open.value = v;
+  if (v) {
+    viewTs.value = model.value ?? Date.now();
+    viewLevel.value = commitLevel(props.picker);
+    focusedTs.value = startOfPicker(kDayjs(model.value ?? undefined), props.picker).valueOf();
+    draftTs.value = model.value;
+  } else {
+    draftTs.value = null;
+    triggerEl.value?.blur();
+  }
+}
+function toggleOpen() {
+  setOpen(!open.value);
+}
+
+function setViewLevel(level: KDateViewLevel) {
+  viewLevel.value = level;
+  focusedTs.value = startOfPicker(
+    kDayjs(focusedTs.value ?? undefined),
+    levelPicker(level, props.picker),
+  ).valueOf();
+  emitPanelChange();
+}
+
+/** 视图跟随键盘焦点：焦点走出当前周期时视图翻页 */
+function ensureView(f: Dayjs) {
+  const v = view.value;
+  const out =
+    viewLevel.value === 'date'
+      ? f.month() !== v.month() || f.year() !== v.year()
+      : viewLevel.value === 'month'
+        ? f.year() !== v.year()
+        : decadeOf(f) !== decadeOf(v);
+  if (out) {
+    viewTs.value = f.valueOf();
+    emitPanelChange();
+  }
+}
+
+function navigate(dir: KDatePickerNavigateDir) {
+  const sign = dir === 'superPrev' || dir === 'prev' ? -1 : 1;
+  const superDir = dir === 'superPrev' || dir === 'superNext';
+  const v = view.value;
+  const amount = viewLevel.value === 'date' ? 1 : viewLevel.value === 'month' ? (superDir ? 10 : 1) : superDir ? 100 : 10;
+  const unit = viewLevel.value === 'date' ? (superDir ? 'year' : 'month') : 'year';
+  viewTs.value = v.add(sign * amount, unit).valueOf();
+  // 焦点随视图平移（antd 同款）：否则翻页后 Enter 找不到焦点格成空操作
+  if (focusedTs.value != null) {
+    focusedTs.value = kDayjs(focusedTs.value).add(sign * amount, unit).valueOf();
+  }
+  emitPanelChange();
+}
+
+function pick(cell: KDateCell) {
+  if (props.disabled || cell.disabled) return;
+  const commit = commitLevel(props.picker);
+  if (viewLevel.value !== commit) {
+    // 高层面板点格 = 下钻（year→month→date），不落值
+    viewTs.value = cell.ts;
+    setViewLevel(viewLevel.value === 'year' ? 'month' : 'date');
+    return;
+  }
+  if (props.showTime) {
+    const base = kDayjs(cell.date).startOf('day');
+    const time = draftD.value;
+    const cfg = props.disabledTime?.(base) ?? {};
+    const firstEnabled = (list: number[], disabled?: number[]) =>
+      list.find((n) => !disabled?.includes(n)) ?? 0;
+    draftTs.value = base
+      .hour(time?.hour() ?? firstEnabled(HOURS, cfg.disabledHours))
+      .minute(time?.minute() ?? firstEnabled(MINUTES, cfg.disabledMinutes))
+      .second(time?.second() ?? firstEnabled(SECONDS, cfg.disabledSeconds))
+      .valueOf();
+    return;
+  }
+  model.value = startOfPicker(cell.date, props.picker).valueOf();
+  emit('change', model.value);
+  formItem?.onFieldChange();
+  setOpen(false);
+}
+
+function clear() {
+  if (props.disabled || !hasValue.value) return;
+  model.value = null;
+  draftTs.value = null;
+  emit('change', null);
+  emit('clear');
+  formItem?.onFieldChange();
+}
+
+function goToday() {
+  if (props.disabled || todayDisabled.value) return;
+  if (props.showTime) {
+    draftTs.value = Date.now();
+    viewTs.value = draftTs.value;
+    return;
+  }
+  model.value = startOfPicker(kDayjs(), props.picker).valueOf();
+  emit('change', model.value);
+  formItem?.onFieldChange();
+  setOpen(false);
+}
+
+function onFocusout(e: FocusEvent) {
+  const t = e.relatedTarget as Node | null;
+  if (t && !rootEl.value?.contains(t) && !popupEl.value?.contains(t)) setOpen(false);
+}
+
+/* ---------- 键盘：焦点恒留触发器，方向键按面板粒度移动，Enter 落值/下钻 ---------- */
+function onKeydown(e: KeyboardEvent) {
+  if (props.disabled || e.isComposing) return;
+  if (!open.value && !props.inline) {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      setOpen(true);
+    }
+    return;
+  }
+  const lp = levelPicker(viewLevel.value, props.picker);
+  const cols =
+    viewLevel.value === 'date' ? 7 : viewLevel.value === 'month' && props.picker === 'quarter' ? 4 : 3;
+  const move = (n: number) => {
+    e.preventDefault();
+    if (focusedTs.value == null) return;
+    const f = addPicker(kDayjs(focusedTs.value), lp, n);
+    focusedTs.value = f.valueOf();
+    ensureView(f);
+  };
+  switch (e.key) {
+    case 'ArrowLeft':
+      move(-1);
+      break;
+    case 'ArrowRight':
+      move(1);
+      break;
+    case 'ArrowUp':
+      move(-cols);
+      break;
+    case 'ArrowDown':
+      move(cols);
+      break;
+    case 'Enter':
+    case ' ': {
+      e.preventDefault();
+      if (focusedTs.value == null) break;
+      const f = kDayjs(focusedTs.value);
+      const cell = flatRows.value.find((c) => isSamePicker(c.date, f, lp));
+      if (cell) pick(cell);
+      break;
+    }
+    case 'PageUp':
+      e.preventDefault();
+      navigate(e.shiftKey ? 'superPrev' : 'prev');
+      break;
+    case 'PageDown':
+      e.preventDefault();
+      navigate(e.shiftKey ? 'superNext' : 'next');
+      break;
+    case 'Escape':
+      if (!props.inline) {
+        e.stopPropagation();
+        setOpen(false);
+      }
+      break;
+  }
+}
+
+watch(
+  () => props.picker,
+  (p) => {
+    viewLevel.value = commitLevel(p);
+  },
+);
+onMounted(() => {
+  if (!props.inline) return;
+  draftTs.value = model.value;
+  viewTs.value = model.value ?? Date.now();
+  viewLevel.value = commitLevel(props.picker);
+  focusedTs.value = startOfPicker(kDayjs(model.value ?? undefined), props.picker).valueOf();
+});
+// inline：外部改值时视图跟随
+watch(model, (v) => {
+  if (props.inline && v != null) {
+    viewTs.value = v;
+    draftTs.value = v;
+  }
+});
+
+/* ---------- headless 绑定包：事件/语义 attrs 收进 script，默认模板与自绘共用 ---------- */
+const rootAttrs = computed(() => ({
+  'data-part': 'root',
+  tabindex: props.inline ? 0 : undefined,
+  role: props.inline ? 'group' : undefined,
+  'aria-label': props.inline ? '日期选择' : undefined,
+}));
+const rootOn: KOnPack = {
+  keydown: (e) => onKeydown(e as KeyboardEvent),
+  focusout: (e) => onFocusout(e as FocusEvent),
+};
+const triggerAttrs = computed(() => ({
+  'data-part': 'trigger',
+  role: 'combobox',
+  'aria-expanded': open.value,
+  'aria-haspopup': 'dialog',
+  'aria-controls': open.value ? `${uid}-panel` : undefined,
+  'aria-disabled': props.disabled || undefined,
+  readonly: true,
+  autocomplete: 'off',
+  value: displayText.value,
+  placeholder: resolvedPlaceholder.value,
+  disabled: props.disabled || undefined,
+  id: props.id,
+}));
+const triggerOn: KOnPack = {
+  click: () => setOpen(true),
+  focus: (e) => emit('focus', e as FocusEvent),
+  blur: (e) => {
+    emit('blur', e as FocusEvent);
+    if (!open.value) formItem?.onFieldBlur();
+  },
+};
+
+const dropAttrs = computed(() => ({
+  id: `${uid}-panel`,
+  class: popupClasses.value,
+  'data-part': 'panel',
+  'data-picker': props.picker,
+  'data-level': viewLevel.value,
+  'data-placement': props.inline ? undefined : flipped.value ? 'top' : 'bottom',
+  'data-k-theme': popupTheme.value,
+  style: props.inline ? undefined : popupStyle.value,
+}));
+
+const keepFocus = (e: Event) => e.preventDefault();
+const confirmOn: KOnPack = { click: () => confirmTime(), mousedown: keepFocus };
+const superPrevOn: KOnPack = { click: () => navigate('superPrev'), mousedown: keepFocus };
+const prevOn: KOnPack = { click: () => navigate('prev'), mousedown: keepFocus };
+const nextOn: KOnPack = { click: () => navigate('next'), mousedown: keepFocus };
+const superNextOn: KOnPack = { click: () => navigate('superNext'), mousedown: keepFocus };
+const titleOn: KOnPack = {
+  click: () => {
+    if (canDrillUp.value) setViewLevel(viewLevel.value === 'date' ? 'month' : 'year');
+  },
+  mousedown: keepFocus,
+};
+const todayOn: KOnPack = { click: () => goToday(), mousedown: keepFocus };
+const clearOn: KOnPack = {
+  mousedown: (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clear();
+  },
+};
+
+const cellAttrs = (cell: KDateCell) => {
+  const lp = levelPicker(viewLevel.value, props.picker);
+  return {
+    'data-part': 'cell',
+    role: 'gridcell',
+    'aria-selected': cell.selected,
+    'aria-disabled': cell.disabled || undefined,
+    'data-today': cell.today || undefined,
+    'data-selected': cell.selected || undefined,
+    'data-disabled': cell.disabled || undefined,
+    'data-outside': !cell.inView || undefined,
+    'data-focused':
+      (focusedTs.value != null && isSamePicker(cell.date, kDayjs(focusedTs.value), lp)) || undefined,
+  };
+};
+const cellOn = (cell: KDateCell): KOnPack => ({ click: () => pick(cell) });
+
+const focus = () => (props.inline ? rootEl.value : triggerEl.value)?.focus();
+const blur = () => (props.inline ? rootEl.value : triggerEl.value)?.blur();
+
+const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KDatePickerRenderScope>(
+  () => props.render,
+  () => ({
+    open: open.value,
+    inline: props.inline,
+    value: model.value,
+    picker: props.picker,
+    format: props.format,
+    placeholder: resolvedPlaceholder.value,
+    disabled: props.disabled,
+    size: props.size,
+    variant: props.variant,
+    status: effectiveStatus.value,
+    viewDate: viewTs.value,
+    viewLevel: viewLevel.value,
+    rows: rows.value,
+    focusedDate: focusedTs.value,
+    flipped: flipped.value,
+    hasValue: hasValue.value,
+    displayText: displayText.value,
+    showTime: !!props.showTime,
+    draftDate: draftTs.value,
+    canConfirmTime: canConfirmTime.value,
+    timePart,
+    updateTimePart,
+    hours: HOURS,
+    minutes: MINUTES,
+    seconds: SECONDS,
+    disabledTime: disabledTimeCfg.value,
+    confirmTime,
+    confirmOn,
+    showClear: showClear.value,
+    titleText: titleText.value,
+    weekdays: WEEKDAYS,
+    todayDisabled: todayDisabled.value,
+    canDrillUp: canDrillUp.value,
+    showSuperNav: showSuperNav.value,
+    rootEl,
+    triggerEl,
+    popupEl,
+    teleportTarget: teleportTarget.value,
+    popupStyle: popupStyle.value,
+    rootAttrs: rootAttrs.value,
+    rootOn,
+    triggerAttrs: triggerAttrs.value,
+    triggerOn,
+    dropAttrs: dropAttrs.value,
+    superPrevOn,
+    prevOn,
+    titleOn,
+    nextOn,
+    superNextOn,
+    cellAttrs,
+    cellOn,
+    todayOn,
+    clearOn,
+    setOpen,
+    toggleOpen,
+    navigate,
+    setViewLevel,
+    pick,
+    clear,
+    goToday,
+    focus,
+    blur,
+    slots,
+  }),
+);
+
+defineSlots<{
+  suffix?(): VNodeChild;
+  /** 面板脚注（今天/清除按钮行之下） */
+  extraFooter?(): VNodeChild;
+  render?(scope: KDatePickerRenderScope): VNodeChild;
+}>();
+
+defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(false), triggerEl });
+</script>
 
 <style>
 /* ---------- 触发器：视觉对齐 KInput 路数（自有部件变量，初值引 alias） ---------- */
@@ -847,7 +985,7 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
 .k-datepicker--inline:focus-within:not(.is-disabled) {
   box-shadow: none;
 }
-.k-datepicker__popup--inline {
+.k-datepicker .k-datepicker__popup--inline {
   position: relative;
   z-index: auto;
   border: var(--k-line-width) solid var(--k-color-border);
@@ -1032,6 +1170,32 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
   box-shadow: inset 0 0 0 1px var(--k-color-primary);
 }
 
+.k-datepicker__time {
+  display: flex;
+  align-items: center;
+  gap: var(--k-size-xxs);
+  padding: var(--k-size-xs) var(--k-size-sm);
+  border-top: var(--k-line-width) solid var(--k-color-split);
+}
+.k-datepicker__time-label {
+  color: var(--k-color-text-tertiary);
+  font-size: var(--k-font-size-sm);
+}
+.k-datepicker__time-select {
+  height: 28px;
+  padding: 0 var(--k-size-xxs);
+  border: var(--k-line-width) solid var(--k-color-border);
+  border-radius: var(--k-border-radius-sm);
+  background-color: var(--k-color-bg-container);
+  color: var(--k-color-text);
+  font-size: var(--k-font-size-sm);
+  font-family: inherit;
+  cursor: pointer;
+}
+.k-datepicker__time-select:disabled {
+  color: var(--k-color-text-quaternary);
+  cursor: not-allowed;
+}
 .k-datepicker__footer {
   display: flex;
   align-items: center;
@@ -1039,6 +1203,23 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
   padding: var(--k-size-xs) var(--k-size-sm);
   border-top: var(--k-line-width) solid var(--k-color-split);
 }
+.k-datepicker__footer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--k-size-sm);
+}
+.k-datepicker__confirm {
+  padding: 2px var(--k-size-xs);
+  border: none;
+  border-radius: var(--k-border-radius-sm);
+  background-color: var(--k-color-primary);
+  color: var(--k-color-text-light-solid);
+  font-size: var(--k-font-size-sm);
+  font-family: inherit;
+  cursor: pointer;
+}
+.k-datepicker__confirm:hover:not(:disabled) { background-color: var(--k-color-primary-hover); }
+.k-datepicker__confirm:disabled { opacity: 0.45; cursor: not-allowed; }
 .k-datepicker__today,
 .k-datepicker__clear-btn {
   padding: 0;
@@ -1073,7 +1254,16 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
 }
 
 @media (hover: none) {
-  .k-datepicker__cell {
+  .k-datepicker__popup {
+    --k-datepicker-panel-width: min(336px, calc(100vw - var(--k-size-lg)));
+  }
+  /* 日期/周网格保持正方形：高度跟随列宽，不再单独拉高 */
+  .k-datepicker__grid--date .k-datepicker__cell {
+    height: auto;
+    aspect-ratio: 1;
+  }
+  .k-datepicker__grid--month .k-datepicker__cell,
+  .k-datepicker__grid--year .k-datepicker__cell {
     height: max(var(--k-datepicker-cell-h), 40px);
   }
 }

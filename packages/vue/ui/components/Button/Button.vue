@@ -1,8 +1,37 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <component
+    :is="tag"
+    v-else
+    ref="rootEl"
+    v-bind="rootAttrs"
+    :class="[classes, classNames?.root]"
+    :style="styles?.root"
+    v-on="rootOn"
+  >
+    <span v-if="loading" data-part="loading" :class="['k-button__spinner', classNames?.loading]" :style="styles?.loading">
+      <slot name="loading" />
+    </span>
+    <KIcon v-else-if="hasIcon" data-part="icon" :class="['k-button__icon', classNames?.icon]" :style="styles?.icon" :component="icon ?? undefined">
+      <slot name="icon" />
+    </KIcon>
+    <!-- 无文字内容不落 span：否则 icon-only 按钮变成 [icon][空 content] 两项，gap 把图标挤离中心 -->
+    <span v-if="$slots.default" data-part="content" :class="['k-button__content', classNames?.content]" :style="styles?.content">
+      <slot />
+    </span>
+  </component>
+</template>
+
 <script setup lang="ts">
 import { computed, inject, ref, useSlots } from 'vue';
 import type { Component, CSSProperties, VNodeChild } from 'vue';
 import KIcon from '../Icon/Icon.vue';
 import { useKConfig } from '../../composables/useKConfig';
+import { useResponsiveValue } from '../../composables/useResponsiveValue';
+import type { KResponsiveValue, KResponsiveMap } from '../../composables/useResponsiveValue';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 import { buttonGroupSizeKey } from './groupContext';
@@ -45,8 +74,8 @@ export interface KButtonRenderScope {
 interface KButtonProps {
   type?: ButtonType;
   variant?: ButtonVariant;
-  /** 缺省走 KButtonGroup 下发 size，无组则 md */
-  size?: ButtonSize;
+  /** 缺省走 KButtonGroup 下发 size，无组则 md；对象/字符串按断点取值 */
+  size?: ButtonSize | KResponsiveMap<ButtonSize> | string;
   shape?: ButtonShape;
   loading?: boolean;
   disabled?: boolean;
@@ -85,7 +114,11 @@ const props = withDefaults(defineProps<KButtonProps>(), {
 
 /* 组内下发：子级自传 size 优先（2026-11-17 拍板，naive ButtonGroup 同款） */
 const groupSize = inject(buttonGroupSizeKey, undefined);
-const mergedSize = computed<ButtonSize>(() => props.size ?? groupSize?.value ?? 'md');
+const resolvedSize = useResponsiveValue<ButtonSize>(
+  () => props.size as KResponsiveValue<ButtonSize> | undefined,
+  { coerce: raw => raw as ButtonSize },
+);
+const mergedSize = computed<ButtonSize>(() => resolvedSize.value ?? groupSize?.value ?? 'md');
 
 /* 波纹开关解析（antd 同款双通道：Provider 全局 wave.disabled + 实例级 prop） */
 const config = useKConfig();
@@ -193,33 +226,6 @@ if (import.meta.env.DEV) {
   }
 }
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <component
-    :is="tag"
-    v-else
-    ref="rootEl"
-    v-bind="rootAttrs"
-    :class="[classes, classNames?.root]"
-    :style="styles?.root"
-    v-on="rootOn"
-  >
-    <span v-if="loading" data-part="loading" :class="['k-button__spinner', classNames?.loading]" :style="styles?.loading">
-      <slot name="loading" />
-    </span>
-    <KIcon v-else-if="hasIcon" data-part="icon" :class="['k-button__icon', classNames?.icon]" :style="styles?.icon" :component="icon ?? undefined">
-      <slot name="icon" />
-    </KIcon>
-    <!-- 无文字内容不落 span：否则 icon-only 按钮变成 [icon][空 content] 两项，gap 把图标挤离中心 -->
-    <span v-if="$slots.default" data-part="content" :class="['k-button__content', classNames?.content]" :style="styles?.content">
-      <slot />
-    </span>
-  </component>
-</template>
 
 <style>
 
@@ -600,6 +606,10 @@ if (import.meta.env.DEV) {
   height: 1em;
   fill: currentcolor;
   display: block;
+}
+/* 描边图标（Tabler 等 fill="none"）保持空心，不被上面的 fill 覆盖 */
+.k-button__icon svg[fill='none'] {
+  fill: none;
 }
 
 .k-button__spinner {

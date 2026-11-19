@@ -1,3 +1,176 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <template v-else>
+  <span
+    ref="rootEl"
+    v-bind="rootAttrs"
+    :class="[rootClasses, classNames?.root]"
+    :style="styles?.root"
+    v-on="rootOn"
+  >
+    <span
+      ref="controlEl"
+      data-part="control"
+      class="k-select__control"
+      :class="classNames?.control"
+      :style="styles?.control"
+      v-bind="controlAttrs"
+      v-on="controlOn"
+    >
+      <span v-if="$slots.prefix" class="k-select__prefix">
+        <slot name="prefix" />
+      </span>
+      <span
+        ref="contentEl"
+        data-part="content"
+        class="k-select__content"
+        :class="classNames?.content"
+        :style="styles?.content"
+      >
+        <template v-if="multiple">
+          <span
+            v-for="(v, i) in selectedValues"
+            :key="String(v)"
+            class="k-select__tag"
+            :class="[{ 'is-hidden': maxTagCount != null && i >= visibleTagCount }, classNames?.tag]"
+            :style="styles?.tag"
+          >
+            <span class="k-select__tag-label">
+              <slot name="label" :option="optionOf(v)" :value="v">{{ labelOf(v) }}</slot>
+            </span>
+            <span
+              v-if="!disabled"
+              class="k-select__tag-remove"
+              role="button"
+              aria-label="移除"
+              v-on="tagRemoveOn(v)"
+            >
+              <svg viewBox="0 0 10 10" width="0.7em" height="0.7em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" /></svg>
+            </span>
+          </span>
+          <KTooltip v-if="showOverflowProbe" :content="overflowTip" placement="top">
+            <template #trigger>
+              <span
+                class="k-select__tag k-select__tag--overflow"
+                :class="{ 'is-hidden': !hiddenValues.length }"
+                @click.stop
+              >+{{ hiddenValues.length }}</span>
+            </template>
+          </KTooltip>
+          <input
+            v-if="filterable && open"
+            ref="inputEl"
+            v-bind="inputAttrs"
+            class="k-select__input"
+            :style="{ width: `${Math.max(1, pattern.length)}ch` }"
+            :value="pattern"
+            :placeholder="hasValue ? '' : placeholder"
+            :disabled="disabled"
+            autocomplete="off"
+            v-on="inputOn"
+          />
+          <span v-if="!hasValue && !(filterable && open)" class="k-select__placeholder">{{ placeholder }}</span>
+        </template>
+        <template v-else>
+          <input
+            v-if="filterable && open"
+            ref="inputEl"
+            v-bind="inputAttrs"
+            class="k-select__input k-select__input--single"
+            :value="pattern"
+            :placeholder="selectedOption?.label ?? placeholder"
+            :disabled="disabled"
+            autocomplete="off"
+            v-on="inputOn"
+          />
+          <template v-else>
+            <span v-if="selectedOption" class="k-select__label">
+              <slot name="label" :option="selectedOption" :value="selectedOption.value">{{ selectedOption.label }}</slot>
+            </span>
+            <span v-else class="k-select__placeholder">{{ placeholder }}</span>
+          </template>
+        </template>
+      </span>
+      <span data-part="suffix" class="k-select__suffix" :class="classNames?.suffix" :style="styles?.suffix">
+        <slot name="suffix" />
+        <span v-if="showClear" class="k-select__clear" role="button" aria-label="清除" v-on="clearOn">
+          <svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5A6.51 6.51 0 0 0 8 1.5Zm0 12A5.5 5.5 0 1 1 13.5 8 5.51 5.51 0 0 1 8 13.5Zm2.23-6.34L8.77 8l1.46 1.84a.47.47 0 1 1-.74.58L7.99 8.56 6.05 9.92a.47.47 0 1 1-.53-.78L7.31 8 5.63 6.26a.47.47 0 0 1 .67-.66L7.99 7.45 9.75 6.1a.47.47 0 1 1 .48.8Z"/></svg>
+        </span>
+        <span class="k-select__arrow" :class="{ 'is-open': open }" aria-hidden="true">
+          <svg viewBox="0 0 10 6" width="1em" height="0.6em" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 1l4 4 4-4" /></svg>
+        </span>
+      </span>
+    </span>
+  </span>
+
+  <Teleport :to="teleportTarget" defer>
+    <Transition name="k-select-drop">
+      <div
+        v-if="open"
+        ref="popupEl"
+        v-bind="dropAttrs"
+        class="k-select__popup"
+        :style="[{ width: popupWidth || undefined }, styles?.list]"
+      >
+        <div v-if="$slots.header" class="k-select__header" :class="classNames?.header" :style="styles?.header">
+          <slot name="header" />
+        </div>
+        <span
+          v-bind="listAttrs"
+          class="k-select__list-inner"
+          v-on="listOn"
+        >
+          <span
+            v-if="!menuOptions.length"
+            class="k-select__empty"
+            :class="classNames?.empty"
+            :style="styles?.empty"
+          >
+            <slot name="empty" :pattern="pattern">{{ pattern ? '无匹配' : '暂无数据' }}</slot>
+          </span>
+          <span v-for="(g, gi) in renderGroups" :key="gi" role="group" :aria-label="g.label ?? undefined">
+            <span
+              v-if="g.label"
+              class="k-select__group"
+              :class="classNames?.group"
+              :style="styles?.group"
+              role="presentation"
+            >{{ g.label }}</span>
+            <span
+              v-for="o in g.children"
+              :key="String(o.value)"
+              v-bind="optionAttrs(o)"
+              class="k-select__option"
+              :class="[{ 'is-selected': selectedValues.includes(o.value), 'is-disabled': o.disabled }, classNames?.option]"
+              :style="styles?.option"
+              v-on="optionOn(o)"
+            >
+              <slot
+                name="option"
+                :option="o"
+                :selected="selectedValues.includes(o.value)"
+                :active="menuOptions.indexOf(o) === activeIndex"
+              >
+                <span class="k-select__option-label">{{ o.label }}</span>
+                <span v-if="multiple && selectedValues.includes(o.value)" class="k-select__option-check" aria-hidden="true">
+                  <svg viewBox="0 0 10 8" width="0.9em" height="0.72em" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 4.2l2.6 2.6L9 1.4" /></svg>
+                </span>
+              </slot>
+            </span>
+          </span>
+        </span>
+        <div v-if="$slots.footer" class="k-select__footer" :class="classNames?.footer" :style="styles?.footer">
+          <slot name="footer" />
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+  </template>
+</template>
+
 <script setup lang="ts">
 import { computed, h, inject, nextTick, onBeforeUnmount, onMounted, ref, useId, useSlots, watch } from 'vue';
 import type { CSSProperties, Ref, VNode, VNodeChild } from 'vue';
@@ -681,179 +854,6 @@ defineSlots<{
 
 defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(false) });
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <template v-else>
-  <span
-    ref="rootEl"
-    v-bind="rootAttrs"
-    :class="[rootClasses, classNames?.root]"
-    :style="styles?.root"
-    v-on="rootOn"
-  >
-    <span
-      ref="controlEl"
-      data-part="control"
-      class="k-select__control"
-      :class="classNames?.control"
-      :style="styles?.control"
-      v-bind="controlAttrs"
-      v-on="controlOn"
-    >
-      <span v-if="$slots.prefix" class="k-select__prefix">
-        <slot name="prefix" />
-      </span>
-      <span
-        ref="contentEl"
-        data-part="content"
-        class="k-select__content"
-        :class="classNames?.content"
-        :style="styles?.content"
-      >
-        <template v-if="multiple">
-          <span
-            v-for="(v, i) in selectedValues"
-            :key="String(v)"
-            class="k-select__tag"
-            :class="[{ 'is-hidden': maxTagCount != null && i >= visibleTagCount }, classNames?.tag]"
-            :style="styles?.tag"
-          >
-            <span class="k-select__tag-label">
-              <slot name="label" :option="optionOf(v)" :value="v">{{ labelOf(v) }}</slot>
-            </span>
-            <span
-              v-if="!disabled"
-              class="k-select__tag-remove"
-              role="button"
-              aria-label="移除"
-              v-on="tagRemoveOn(v)"
-            >
-              <svg viewBox="0 0 10 10" width="0.7em" height="0.7em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" /></svg>
-            </span>
-          </span>
-          <KTooltip v-if="showOverflowProbe" :content="overflowTip" placement="top">
-            <template #trigger>
-              <span
-                class="k-select__tag k-select__tag--overflow"
-                :class="{ 'is-hidden': !hiddenValues.length }"
-                @click.stop
-              >+{{ hiddenValues.length }}</span>
-            </template>
-          </KTooltip>
-          <input
-            v-if="filterable && open"
-            ref="inputEl"
-            v-bind="inputAttrs"
-            class="k-select__input"
-            :style="{ width: `${Math.max(1, pattern.length)}ch` }"
-            :value="pattern"
-            :placeholder="hasValue ? '' : placeholder"
-            :disabled="disabled"
-            autocomplete="off"
-            v-on="inputOn"
-          />
-          <span v-if="!hasValue && !(filterable && open)" class="k-select__placeholder">{{ placeholder }}</span>
-        </template>
-        <template v-else>
-          <input
-            v-if="filterable && open"
-            ref="inputEl"
-            v-bind="inputAttrs"
-            class="k-select__input k-select__input--single"
-            :value="pattern"
-            :placeholder="selectedOption?.label ?? placeholder"
-            :disabled="disabled"
-            autocomplete="off"
-            v-on="inputOn"
-          />
-          <template v-else>
-            <span v-if="selectedOption" class="k-select__label">
-              <slot name="label" :option="selectedOption" :value="selectedOption.value">{{ selectedOption.label }}</slot>
-            </span>
-            <span v-else class="k-select__placeholder">{{ placeholder }}</span>
-          </template>
-        </template>
-      </span>
-      <span data-part="suffix" class="k-select__suffix" :class="classNames?.suffix" :style="styles?.suffix">
-        <slot name="suffix" />
-        <span v-if="showClear" class="k-select__clear" role="button" aria-label="清除" v-on="clearOn">
-          <svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5A6.51 6.51 0 0 0 8 1.5Zm0 12A5.5 5.5 0 1 1 13.5 8 5.51 5.51 0 0 1 8 13.5Zm2.23-6.34L8.77 8l1.46 1.84a.47.47 0 1 1-.74.58L7.99 8.56 6.05 9.92a.47.47 0 1 1-.53-.78L7.31 8 5.63 6.26a.47.47 0 0 1 .67-.66L7.99 7.45 9.75 6.1a.47.47 0 1 1 .48.8Z"/></svg>
-        </span>
-        <span class="k-select__arrow" :class="{ 'is-open': open }" aria-hidden="true">
-          <svg viewBox="0 0 10 6" width="1em" height="0.6em" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 1l4 4 4-4" /></svg>
-        </span>
-      </span>
-    </span>
-  </span>
-
-  <Teleport :to="teleportTarget" defer>
-    <Transition name="k-select-drop">
-      <div
-        v-if="open"
-        ref="popupEl"
-        v-bind="dropAttrs"
-        class="k-select__popup"
-        :style="[{ width: popupWidth || undefined }, styles?.list]"
-      >
-        <div v-if="$slots.header" class="k-select__header" :class="classNames?.header" :style="styles?.header">
-          <slot name="header" />
-        </div>
-        <span
-          v-bind="listAttrs"
-          class="k-select__list-inner"
-          v-on="listOn"
-        >
-          <span
-            v-if="!menuOptions.length"
-            class="k-select__empty"
-            :class="classNames?.empty"
-            :style="styles?.empty"
-          >
-            <slot name="empty" :pattern="pattern">{{ pattern ? '无匹配' : '暂无数据' }}</slot>
-          </span>
-          <span v-for="(g, gi) in renderGroups" :key="gi" role="group" :aria-label="g.label ?? undefined">
-            <span
-              v-if="g.label"
-              class="k-select__group"
-              :class="classNames?.group"
-              :style="styles?.group"
-              role="presentation"
-            >{{ g.label }}</span>
-            <span
-              v-for="o in g.children"
-              :key="String(o.value)"
-              v-bind="optionAttrs(o)"
-              class="k-select__option"
-              :class="[{ 'is-selected': selectedValues.includes(o.value), 'is-disabled': o.disabled }, classNames?.option]"
-              :style="styles?.option"
-              v-on="optionOn(o)"
-            >
-              <slot
-                name="option"
-                :option="o"
-                :selected="selectedValues.includes(o.value)"
-                :active="menuOptions.indexOf(o) === activeIndex"
-              >
-                <span class="k-select__option-label">{{ o.label }}</span>
-                <span v-if="multiple && selectedValues.includes(o.value)" class="k-select__option-check" aria-hidden="true">
-                  <svg viewBox="0 0 10 8" width="0.9em" height="0.72em" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 4.2l2.6 2.6L9 1.4" /></svg>
-                </span>
-              </slot>
-            </span>
-          </span>
-        </span>
-        <div v-if="$slots.footer" class="k-select__footer" :class="classNames?.footer" :style="styles?.footer">
-          <slot name="footer" />
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
-  </template>
-</template>
 
 <style>
 /* ---------- 触发器：视觉对齐 KInput 路数（自有部件变量，初值引 alias） ---------- */

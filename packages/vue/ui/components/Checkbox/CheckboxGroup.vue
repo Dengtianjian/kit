@@ -1,3 +1,16 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <span v-else class="k-checkbox-group" :class="$attrs.class" v-bind="rootAttrs">
+    <KCheckbox v-for="o in normalized" :key="String(o.value)" :value="o.value" :disabled="o.disabled">
+      {{ o.label }}
+    </KCheckbox>
+    <slot v-if="!options" />
+  </span>
+</template>
+
 <script setup lang="ts">
 import { computed, provide, useSlots } from 'vue';
 import type { VNodeChild } from 'vue';
@@ -66,19 +79,6 @@ defineSlots<{
   render?(scope: KCheckboxGroupRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <span v-else class="k-checkbox-group" :class="$attrs.class" v-bind="rootAttrs">
-    <KCheckbox v-for="o in normalized" :key="String(o.value)" :value="o.value" :disabled="o.disabled">
-      {{ o.label }}
-    </KCheckbox>
-    <slot v-if="!options" />
-  </span>
-</template>
 
 <style>
 .k-checkbox-group {

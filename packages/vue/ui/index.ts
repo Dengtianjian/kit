@@ -12,8 +12,16 @@ export type { KSeedToken, ThemeConfig, ThemePlatformConfig, ThemeResult, TokenVa
 
 /* -------------------------------------- 组合式与工具 -------------------------------------- */
 
-export { useBreakpoint, DEFAULT_BREAKPOINTS } from "./composables/useBreakpoint";
-export type { KBreakpoint } from "./composables/useBreakpoint";
+export { useBreakpoint, getSharedBreakpoint, DEFAULT_BREAKPOINTS } from "./composables/useBreakpoint";
+export type { KBreakpoint, KBreakpointState } from "./composables/useBreakpoint";
+export {
+  useResponsiveValue,
+  parseResponsiveString,
+  resolveResponsiveValue,
+  isResponsiveString,
+  isResponsiveMap,
+} from "./composables/useResponsiveValue";
+export type { KResponsiveMap, KResponsiveValue } from "./composables/useResponsiveValue";
 export { provideKConfig, useKConfig, useProps } from "./composables/useKConfig";
 export type { KConfig, KConfigInput, KComponentDefaults } from "./composables/useKConfig";
 export { provideKApp, useKApp } from "./composables/useKApp";
@@ -62,7 +70,9 @@ export { default as KAlert } from "./components/Alert/Alert.vue";
 export { default as KSpin } from "./components/Spin/Spin.vue";
 export { default as KNotification } from "./components/Notification/Notification.vue";
 export { default as KDatePicker } from "./components/DatePicker/DatePicker.vue";
+export { default as KDateRangePicker } from "./components/DateRangePicker/DateRangePicker.vue";
 export { default as KUpload } from "./components/Upload/Upload.vue";
+export { default as KImageCropper } from "./components/ImageCropper/ImageCropper.vue";
 export { default as KSortable } from "./components/Sortable/Sortable.vue";
 export type {
   KSortableOrientation,
@@ -107,6 +117,7 @@ export type { KPopconfirmRenderScope } from "./components/Popconfirm/Popconfirm.
 export type { KModalRenderScope } from "./components/Modal/Modal.vue";
 export type { KNotificationRenderScope } from "./components/Notification/Notification.vue";
 export type { KDatePickerRenderScope, KDatePickerNavigateDir } from "./components/DatePicker/DatePicker.vue";
+export type { KDateRange } from "./components/DateRangePicker/DateRangePicker.vue";
 export type { KPickerMode, KDateViewLevel, KDateCell } from "./utils/date";
 export type {
   KUploadFile,
@@ -118,6 +129,11 @@ export type {
   KUploadUpload,
   KUploadRequestOptions,
   KUploadRequestResult,
+  KUploadCompressOptions,
+  KUploadChunkInfo,
+  KUploadMergeOptions,
+  KUploadMerge,
+  KUploadCropOptions,
   KUploadRemoveHook,
 } from "./components/Upload/Upload.vue";
 export type {

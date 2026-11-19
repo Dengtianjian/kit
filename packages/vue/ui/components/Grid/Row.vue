@@ -1,8 +1,19 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <div v-else data-part="root" :class="[classes, classNames?.root]" :style="rootStyle">
+    <slot />
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, provide, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
-import { useBreakpoint } from '../../composables/useBreakpoint';
 import type { KBreakpoint } from '../../composables/useBreakpoint';
+import { useResponsiveValue } from '../../composables/useResponsiveValue';
+import type { KResponsiveValue } from '../../composables/useResponsiveValue';
 import { K_ROW_INJECTION_KEY } from '../../utils/grid';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
@@ -11,7 +22,8 @@ defineOptions({ name: 'KRow' });
 
 type RowPart = 'root';
 
-type GutterResponsive = Partial<Record<KBreakpoint, number | [number, number]>>;
+type GutterValue = number | [number, number];
+type GutterResponsive = Partial<Record<KBreakpoint, GutterValue>>;
 
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
 export interface KRowRenderScope {
@@ -26,8 +38,8 @@ export interface KRowRenderScope {
 }
 
 interface KRowProps {
-  /** 数值 = [水平, 垂直]；对象 = 按断点取定值（列宽流动、gutter 不流动，视觉规则 §2） */
-  gutter?: number | [number, number] | GutterResponsive;
+  /** 数值 = [水平, 垂直]；对象/字符串 = 按断点取定值（如 `'xs:8 sm:16 md:24'`） */
+  gutter?: GutterValue | GutterResponsive | string;
   justify?: 'start' | 'end' | 'center' | 'space-between' | 'space-around' | 'space-evenly';
   align?: 'top' | 'middle' | 'bottom' | 'stretch';
   wrap?: boolean;
@@ -39,26 +51,23 @@ interface KRowProps {
 
 const props = withDefaults(defineProps<KRowProps>(), { wrap: true });
 
-const breakpoint =
-  props.gutter != null && !Array.isArray(props.gutter) && typeof props.gutter === 'object'
-    ? useBreakpoint()
-    : undefined;
-
-const ORDER: KBreakpoint[] = ['xxl', 'xl', 'lg', 'md', 'sm', 'xs'];
+const resolvedGutter = useResponsiveValue<GutterValue>(
+  () => props.gutter as KResponsiveValue<GutterValue> | undefined,
+  {
+    coerce: raw => {
+      const parts = raw.split(',');
+      return parts.length > 1
+        ? ([Number(parts[0]), Number(parts[1] ?? 0)] as GutterValue)
+        : (Number(raw) as GutterValue);
+    },
+  },
+);
 
 const gutter = computed<[number, number]>(() => {
-  const g = props.gutter;
-  if (g == null) return [0, 0];
-  if (typeof g === 'number') return [g, 0];
-  if (Array.isArray(g)) return [g[0] ?? 0, g[1] ?? 0];
-  // Responsive：取当前档，缺则向低档回退
-  const current = breakpoint?.current.value ?? 'xs';
-  const idx = ORDER.indexOf(current);
-  for (let i = idx; i < ORDER.length; i++) {
-    const v = g[ORDER[i]];
-    if (v != null) return typeof v === 'number' ? [v, 0] : [v[0] ?? 0, v[1] ?? 0];
-  }
-  return [0, 0];
+  const value = resolvedGutter.value;
+  if (value == null) return [0, 0];
+  if (typeof value === 'number') return [value, 0];
+  return [value[0] ?? 0, value[1] ?? 0];
 });
 
 provide(K_ROW_INJECTION_KEY, gutter);
@@ -102,16 +111,6 @@ defineSlots<{
   render?(scope: KRowRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <div v-else data-part="root" :class="[classes, classNames?.root]" :style="rootStyle">
-    <slot />
-  </div>
-</template>
 
 <style>
 

@@ -50,5 +50,9 @@ export function computeOverlayPosition(
       : align === 'Bottom' ? anchor.bottom - h
       : anchor.top + (anchor.height - h) / 2;
   }
+  // 两侧都放不下时（移动端单面板仍高于剩余空间）保底夹进视口，宁可覆盖锚点也不越出屏幕
+  const margin = 8;
+  top = Math.min(Math.max(top, margin), Math.max(margin, viewport.height - h - margin));
+  left = Math.min(Math.max(left, margin), Math.max(margin, viewport.width - w - margin));
   return { top: Math.round(top), left: Math.round(left), placement: `${side}${align}` as KOverlayPlacement };
 }

@@ -1,3 +1,18 @@
+<template>
+  <Teleport to="head" :disabled="!canUseDom">
+    <component :is="'style'" v-if="cssText" v-html="cssText" />
+  </Teleport>
+
+  <div
+    v-if="scoped"
+    :class="['k-config-provider', scopeClass, ($attrs.class as string) ?? '']"
+    :data-k-theme="scheme === 'auto' ? undefined : scheme"
+  >
+    <slot />
+  </div>
+  <slot v-else />
+</template>
+
 <script setup lang="ts">
 import { computed, watchEffect } from 'vue';
 import { createTheme } from '../../themes/create-theme';
@@ -87,18 +102,3 @@ provideKConfig({
   wave: computed(() => props.wave),
 });
 </script>
-
-<template>
-  <Teleport to="head" :disabled="!canUseDom">
-    <component :is="'style'" v-if="cssText" v-html="cssText" />
-  </Teleport>
-
-  <div
-    v-if="scoped"
-    :class="['k-config-provider', scopeClass, ($attrs.class as string) ?? '']"
-    :data-k-theme="scheme === 'auto' ? undefined : scheme"
-  >
-    <slot />
-  </div>
-  <slot v-else />
-</template>

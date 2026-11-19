@@ -1,14 +1,48 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <div
+    v-else
+    data-part="root"
+    :class="[classes, classNames?.root]"
+    :style="rootStyle"
+  >
+    <template v-if="!separator">
+      <slot />
+    </template>
+    <template v-else>
+      <template v-for="(child, i) in children" :key="i">
+        <span data-part="item" :class="['k-space__item', classNames?.item]" :style="styles?.item">
+          <component :is="child" />
+        </span>
+        <span
+          v-if="i < children.length - 1"
+          data-part="separator"
+          :class="['k-space__separator', classNames?.separator]"
+          :style="styles?.separator"
+          aria-hidden="true"
+        />
+      </template>
+    </template>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, useSlots, Comment, Fragment, isVNode } from 'vue';
 import type { CSSProperties, VNode, VNodeChild } from 'vue';
 import { resolveSizeTuple } from '../../utils/size';
 import type { KSpaceSize } from '../../utils/size';
+import { useResponsiveValue } from '../../composables/useResponsiveValue';
+import type { KResponsiveValue, KResponsiveMap } from '../../composables/useResponsiveValue';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 
 defineOptions({ name: 'KSpace' });
 
 type SpacePart = 'root' | 'item' | 'separator';
+type SpaceSizeValue = KSpaceSize | [KSpaceSize, KSpaceSize];
 
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
 export interface KSpaceRenderScope {
@@ -27,8 +61,8 @@ export interface KSpaceRenderScope {
 
 interface KSpaceProps {
   direction?: 'horizontal' | 'vertical';
-  /** 轴名对应 token 阶梯（4/8/12/16/24），数字 = 直接 px，可传 [行, 列] */
-  size?: KSpaceSize | [KSpaceSize, KSpaceSize];
+  /** 轴名对应 token 阶梯（4/8/12/16/24），数字 = 直接 px，可传 [行, 列]；对象/字符串按断点取值 */
+  size?: SpaceSizeValue | KResponsiveMap<SpaceSizeValue> | string;
   align?: 'start' | 'center' | 'end' | 'baseline';
   wrap?: boolean;
   separator?: boolean;
@@ -47,7 +81,14 @@ const props = withDefaults(defineProps<KSpaceProps>(), {
 
 const slots = useSlots();
 
-const sizeTuple = computed(() => resolveSizeTuple(props.size));
+const resolvedSize = useResponsiveValue<SpaceSizeValue>(
+  () => props.size as KResponsiveValue<SpaceSizeValue>,
+  {
+    coerce: raw => (/^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : raw) as SpaceSizeValue,
+  },
+);
+
+const sizeTuple = computed(() => resolveSizeTuple(resolvedSize.value ?? 'sm'));
 
 /* 间距变量 = 布局逻辑，headless 绑定包带走；styles?.root 只进默认渲染 */
 const gapStyle = computed<CSSProperties>(() => ({
@@ -111,37 +152,6 @@ defineSlots<{
   render?(scope: KSpaceRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <div
-    v-else
-    data-part="root"
-    :class="[classes, classNames?.root]"
-    :style="rootStyle"
-  >
-    <template v-if="!separator">
-      <slot />
-    </template>
-    <template v-else>
-      <template v-for="(child, i) in children" :key="i">
-        <span data-part="item" :class="['k-space__item', classNames?.item]" :style="styles?.item">
-          <component :is="child" />
-        </span>
-        <span
-          v-if="i < children.length - 1"
-          data-part="separator"
-          :class="['k-space__separator', classNames?.separator]"
-          :style="styles?.separator"
-          aria-hidden="true"
-        />
-      </template>
-    </template>
-  </div>
-</template>
 
 <style>
 

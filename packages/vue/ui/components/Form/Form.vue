@@ -1,19 +1,45 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <form
+    v-else
+    class="k-form"
+    :class="[
+      `k-form--${layoutValue}`,
+      `k-form--label-${labelAlignValue}`,
+      classNames?.root,
+    ]"
+    v-bind="rootAttrs"
+    :style="styles?.root"
+    v-on="rootOn"
+  >
+    <slot />
+  </form>
+</template>
+
 <script setup lang="ts">
 import { computed, onBeforeUnmount, provide, ref, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
 import { FORM_KEY } from './context';
 import type { FormItemMeta } from './context';
+import { useResponsiveValue } from '../../composables/useResponsiveValue';
+import type { KResponsiveValue, KResponsiveMap } from '../../composables/useResponsiveValue';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 
 defineOptions({ name: 'KForm' });
 
+type FormLayout = 'vertical' | 'horizontal' | 'inline';
+type FormLabelAlign = 'left' | 'right';
+
 /** headless scope：#render 插槽 / render prop 闭包参数；字段注册/校验汇总逻辑照跑 */
 export interface KFormRenderScope {
-  layout: 'vertical' | 'horizontal' | 'inline';
+  layout: FormLayout;
   /** 归一化后的标签宽 CSS 值（number → px） */
   labelWidth: string;
-  labelAlign: 'left' | 'right';
+  labelAlign: FormLabelAlign;
   colon: boolean;
   model: Record<string, unknown> | undefined;
   rules: Record<string, unknown> | undefined;
@@ -35,12 +61,14 @@ interface KFormProps {
   model?: Record<string, unknown>;
   /** 校验规则：async-validator 规则对象或其数组，按字段 name 匹配 */
   rules?: Record<string, unknown>;
-  layout?: 'vertical' | 'horizontal' | 'inline';
-  /** horizontal/inline 下标签宽（antd labelCol 的简化数值，px） */
-  labelWidth?: number | string;
-  labelAlign?: 'left' | 'right';
-  /** 标签后冒号（antd 同款默认开） */
-  colon?: boolean;
+  /** 布局；对象/字符串按断点取值 */
+  layout?: FormLayout | KResponsiveMap<FormLayout> | string;
+  /** horizontal/inline 下标签宽（antd labelCol 的简化数值，px）；对象/字符串按断点取值 */
+  labelWidth?: number | string | KResponsiveMap<number | string>;
+  /** 标签对齐；对象/字符串按断点取值 */
+  labelAlign?: FormLabelAlign | KResponsiveMap<FormLabelAlign> | string;
+  /** 标签后冒号（antd 同款默认开）；对象/字符串按断点取值 */
+  colon?: boolean | KResponsiveMap<boolean> | string;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
   render?: KRenderFn<KFormRenderScope>;
   classNames?: { root?: string };
@@ -61,10 +89,34 @@ const emit = defineEmits<{
 
 const items = new Map<string, FormItemMeta>();
 
+const resolvedLabelWidth = useResponsiveValue<number | string>(
+  () => props.labelWidth as KResponsiveValue<number | string>,
+  {
+    coerce: raw => (/^\d+(\.\d+)?$/.test(raw) ? Number(raw) : raw),
+  },
+);
+
+const resolvedLayout = useResponsiveValue<FormLayout>(
+  () => props.layout as KResponsiveValue<FormLayout>,
+  { coerce: raw => raw as FormLayout },
+);
+const resolvedLabelAlign = useResponsiveValue<FormLabelAlign>(
+  () => props.labelAlign as KResponsiveValue<FormLabelAlign>,
+  { coerce: raw => raw as FormLabelAlign },
+);
+const resolvedColon = useResponsiveValue<boolean>(
+  () => props.colon as KResponsiveValue<boolean>,
+  { coerce: raw => raw === 'true' },
+);
+
+const layoutValue = computed<FormLayout>(() => resolvedLayout.value ?? 'vertical');
+const labelAlignValue = computed<FormLabelAlign>(() => resolvedLabelAlign.value ?? 'right');
+const colonValue = computed<boolean>(() => resolvedColon.value ?? true);
+
 provide(FORM_KEY, {
   model: computed(() => props.model),
   rules: computed(() => props.rules),
-  colon: computed(() => props.colon),
+  colon: computed(() => colonValue.value),
   register: (item) => items.set(item.name, item),
   unregister: (name) => items.delete(name),
 });
@@ -109,9 +161,10 @@ onBeforeUnmount(() => items.clear());
 
 defineExpose({ validate, resetFields, validating, errorCount });
 
-const labelWidthCss = computed(() =>
-  typeof props.labelWidth === 'number' ? `${props.labelWidth}px` : props.labelWidth,
-);
+const labelWidthCss = computed(() => {
+  const width = resolvedLabelWidth.value ?? 100;
+  return typeof width === 'number' ? `${width}px` : width;
+});
 
 const rootAttrs = computed(() => ({
   'data-part': 'root',
@@ -124,10 +177,10 @@ const slots = useSlots();
 const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KFormRenderScope>(
   () => props.render,
   () => ({
-    layout: props.layout,
+    layout: layoutValue.value,
     labelWidth: labelWidthCss.value,
-    labelAlign: props.labelAlign,
-    colon: props.colon,
+    labelAlign: labelAlignValue.value,
+    colon: colonValue.value,
     model: props.model,
     rules: props.rules,
     validating: validating.value,
@@ -145,27 +198,6 @@ defineSlots<{
   render?(scope: KFormRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <form
-    v-else
-    class="k-form"
-    :class="[
-      `k-form--${layout}`,
-      `k-form--label-${labelAlign}`,
-      classNames?.root,
-    ]"
-    v-bind="rootAttrs"
-    :style="styles?.root"
-    v-on="rootOn"
-  >
-    <slot />
-  </form>
-</template>
 
 <style>
 .k-form {

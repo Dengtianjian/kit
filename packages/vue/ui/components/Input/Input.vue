@@ -1,3 +1,85 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <div
+    v-else
+    ref="rootEl"
+    :class="[classes, classNames?.root]"
+    :style="styles?.root"
+    v-bind="rootAttrs"
+    @click="onRootClick"
+  >
+    <span
+      v-if="slots.prefix"
+      data-part="prefix"
+      class="k-input__prefix"
+      :class="classNames?.prefix"
+      :style="styles?.prefix"
+    ><slot name="prefix" /></span>
+    <textarea
+      v-if="isTextarea"
+      ref="inputEl"
+      class="k-input__input"
+      :class="classNames?.input"
+      :style="[styles?.input, autosize ? { resize: 'none' } : null]"
+      v-bind="inputAttrs"
+      v-on="inputOn"
+    />
+    <input
+      v-else
+      ref="inputEl"
+      class="k-input__input"
+      :class="classNames?.input"
+      :style="styles?.input"
+      v-bind="inputAttrs"
+      v-on="inputOn"
+    />
+    <span
+      v-if="hasSuffix"
+      data-part="suffix"
+      class="k-input__suffix"
+      :class="classNames?.suffix"
+      :style="styles?.suffix"
+    >
+      <slot name="suffix" />
+      <span v-if="loading" class="k-input__loading" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <circle cx="8" cy="8" r="6" stroke-opacity="0.25" />
+          <path d="M14 8a6 6 0 0 0-6-6" />
+        </svg>
+      </span>
+      <span
+        v-if="isPassword && showPassword"
+        class="k-input__eye"
+        role="button"
+        :aria-label="passwordVisible ? '隐藏密码' : '显示密码'"
+        @mousedown.prevent="togglePassword"
+      >
+        <svg v-if="passwordVisible" viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8Z" /><circle cx="8" cy="8" r="1.8" /></svg>
+        <svg v-else viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2 2l12 12" /><path d="M6.3 4.2A6.6 6.6 0 0 1 8 4c4 0 6.5 4 6.5 4a12 12 0 0 1-2.2 2.6M4.2 5.6A11 11 0 0 0 1.5 8S4 12 8 12c.9 0 1.7-.2 2.4-.5" /></svg>
+      </span>
+      <!-- 内建清除图标：最小 inline SVG（currentColor），不动 KIcon 注入模式；KForm 批如引入图标库依赖再统一 -->
+      <span
+        v-if="showClear"
+        class="k-input__clear"
+        role="button"
+        aria-label="清除"
+        @mousedown.prevent="onClear"
+      >
+        <svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor" aria-hidden="true">
+          <path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5A6.51 6.51 0 0 0 8 1.5Zm0 12A5.5 5.5 0 1 1 13.5 8 5.51 5.51 0 0 1 8 13.5Zm2.23-6.34L8.77 8l1.46 1.84a.47.47 0 1 1-.74.58L7.99 8.56 6.05 9.92a.47.47 0 1 1-.53-.78L7.31 8 5.63 6.26a.47.47 0 0 1 .67-.66L7.99 7.45 9.75 6.1a.47.47 0 1 1 .48.8Z"/>
+        </svg>
+      </span>
+      <span v-if="showCount" class="k-input__count">
+        <span class="k-input__count-current">{{ String(model ?? '').length }}</span>
+        <template v-if="maxlength"> / {{ maxlength }}</template>
+      </span>
+    </span>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
 import { FORM_ITEM_KEY } from '../Form/context';
@@ -119,6 +201,9 @@ const rootEl = ref<HTMLElement | null>(null);
 const focused = ref(false);
 const passwordVisible = ref(false);
 const isTextarea = computed(() => props.type === 'textarea');
+const resolvedPlaceholder = computed(
+  () => props.placeholder ?? (isTextarea.value ? '请输入内容' : '请输入'),
+);
 const isPassword = computed(() => props.type === 'password');
 const actualType = computed(() =>
   isPassword.value && props.showPassword && passwordVisible.value ? 'text' : props.type,
@@ -253,7 +338,7 @@ const inputAttrs = computed(() => ({
   type: isTextarea.value ? undefined : actualType.value,
   rows: isTextarea.value ? (autosizeOptions()?.minRows ?? props.rows) : undefined,
   'aria-busy': props.loading || undefined,
-  placeholder: props.placeholder,
+  placeholder: resolvedPlaceholder.value,
   disabled: props.disabled || undefined,
   readonly: props.readonly || undefined,
   maxlength: props.maxlength,
@@ -285,7 +370,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KInpu
     passivelyActivated: props.passivelyActivated,
     passwordVisible: passwordVisible.value,
     status: effectiveStatus.value,
-    placeholder: props.placeholder,
+    placeholder: resolvedPlaceholder.value,
     disabled: props.disabled,
     readonly: props.readonly,
     clearable: props.clearable,
@@ -314,88 +399,6 @@ defineSlots<{
 
 defineExpose({ inputEl, focus, blur, select, activate: focus, deactivate: blur });
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <div
-    v-else
-    ref="rootEl"
-    :class="[classes, classNames?.root]"
-    :style="styles?.root"
-    v-bind="rootAttrs"
-    @click="onRootClick"
-  >
-    <span
-      v-if="slots.prefix"
-      data-part="prefix"
-      class="k-input__prefix"
-      :class="classNames?.prefix"
-      :style="styles?.prefix"
-    ><slot name="prefix" /></span>
-    <textarea
-      v-if="isTextarea"
-      ref="inputEl"
-      class="k-input__input"
-      :class="classNames?.input"
-      :style="[styles?.input, autosize ? { resize: 'none' } : null]"
-      v-bind="inputAttrs"
-      v-on="inputOn"
-    />
-    <input
-      v-else
-      ref="inputEl"
-      class="k-input__input"
-      :class="classNames?.input"
-      :style="styles?.input"
-      v-bind="inputAttrs"
-      v-on="inputOn"
-    />
-    <span
-      v-if="hasSuffix"
-      data-part="suffix"
-      class="k-input__suffix"
-      :class="classNames?.suffix"
-      :style="styles?.suffix"
-    >
-      <slot name="suffix" />
-      <span v-if="loading" class="k-input__loading" aria-hidden="true">
-        <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-          <circle cx="8" cy="8" r="6" stroke-opacity="0.25" />
-          <path d="M14 8a6 6 0 0 0-6-6" />
-        </svg>
-      </span>
-      <span
-        v-if="isPassword && showPassword"
-        class="k-input__eye"
-        role="button"
-        :aria-label="passwordVisible ? '隐藏密码' : '显示密码'"
-        @mousedown.prevent="togglePassword"
-      >
-        <svg v-if="passwordVisible" viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8Z" /><circle cx="8" cy="8" r="1.8" /></svg>
-        <svg v-else viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2 2l12 12" /><path d="M6.3 4.2A6.6 6.6 0 0 1 8 4c4 0 6.5 4 6.5 4a12 12 0 0 1-2.2 2.6M4.2 5.6A11 11 0 0 0 1.5 8S4 12 8 12c.9 0 1.7-.2 2.4-.5" /></svg>
-      </span>
-      <!-- 内建清除图标：最小 inline SVG（currentColor），不动 KIcon 注入模式；KForm 批如引入图标库依赖再统一 -->
-      <span
-        v-if="showClear"
-        class="k-input__clear"
-        role="button"
-        aria-label="清除"
-        @mousedown.prevent="onClear"
-      >
-        <svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor" aria-hidden="true">
-          <path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5A6.51 6.51 0 0 0 8 1.5Zm0 12A5.5 5.5 0 1 1 13.5 8 5.51 5.51 0 0 1 8 13.5Zm2.23-6.34L8.77 8l1.46 1.84a.47.47 0 1 1-.74.58L7.99 8.56 6.05 9.92a.47.47 0 1 1-.53-.78L7.31 8 5.63 6.26a.47.47 0 0 1 .67-.66L7.99 7.45 9.75 6.1a.47.47 0 1 1 .48.8Z"/>
-        </svg>
-      </span>
-      <span v-if="showCount" class="k-input__count">
-        <span class="k-input__count-current">{{ String(model ?? '').length }}</span>
-        <template v-if="maxlength"> / {{ maxlength }}</template>
-      </span>
-    </span>
-  </div>
-</template>
 
 <style>
 /* ---------- 部件变量（共同约定：初值引 alias，状态局部重声明） ---------- */

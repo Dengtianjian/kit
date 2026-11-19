@@ -1,3 +1,70 @@
+<template>
+  <template v-if="hasCustomRender">
+    <template v-if="visible">
+      <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+      <component v-else :is="renderPropOutlet" />
+    </template>
+  </template>
+  <div
+    v-else-if="visible"
+    v-bind="rootAttrs"
+    class="k-alert"
+    :class="[
+      `k-alert--${type}`,
+      { 'k-alert--banner': banner, 'k-alert--with-description': Boolean(description || $slots.description) },
+      classNames?.root,
+    ]"
+    :style="styles?.root"
+  >
+    <span
+      v-if="showIcon && icon !== null"
+      data-part="icon"
+      class="k-alert__icon"
+      :class="classNames?.icon"
+      :style="styles?.icon"
+      aria-hidden="true"
+    >
+      <template v-if="icon">
+        <component :is="KNode" :node="icon" />
+      </template>
+      <slot v-else name="icon">
+        <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+          <path :d="ICON_PATH[type]" />
+        </svg>
+      </slot>
+    </span>
+    <div data-part="content" class="k-alert__content" :class="classNames?.content" :style="styles?.content">
+      <div v-if="message || $slots.title" data-part="title" class="k-alert__title" :class="classNames?.title" :style="styles?.title">
+        <slot name="title"><component v-if="message" :is="KNode" :node="message" /></slot>
+      </div>
+      <div
+        v-if="description || $slots.description"
+        data-part="description"
+        class="k-alert__description"
+        :class="classNames?.description"
+        :style="styles?.description"
+      >
+        <slot name="description"><component v-if="description" :is="KNode" :node="description" /></slot>
+      </div>
+    </div>
+    <div v-if="$slots.action" data-part="action" class="k-alert__action" :class="classNames?.action" :style="styles?.action">
+      <slot name="action" />
+    </div>
+    <button
+      v-if="closable"
+      type="button"
+      data-part="close"
+      class="k-alert__close"
+      :class="classNames?.close"
+      :style="styles?.close"
+      aria-label="关闭"
+      @click="onClose"
+    >
+      <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
+    </button>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, getCurrentInstance, ref, useSlots } from 'vue';
 import type { CSSProperties, VNode, VNodeChild } from 'vue';
@@ -105,73 +172,6 @@ defineSlots<{
   render?(scope: KAlertRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <template v-if="visible">
-      <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-      <component v-else :is="renderPropOutlet" />
-    </template>
-  </template>
-  <div
-    v-else-if="visible"
-    v-bind="rootAttrs"
-    class="k-alert"
-    :class="[
-      `k-alert--${type}`,
-      { 'k-alert--banner': banner, 'k-alert--with-description': Boolean(description || $slots.description) },
-      classNames?.root,
-    ]"
-    :style="styles?.root"
-  >
-    <span
-      v-if="showIcon && icon !== null"
-      data-part="icon"
-      class="k-alert__icon"
-      :class="classNames?.icon"
-      :style="styles?.icon"
-      aria-hidden="true"
-    >
-      <template v-if="icon">
-        <component :is="KNode" :node="icon" />
-      </template>
-      <slot v-else name="icon">
-        <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-          <path :d="ICON_PATH[type]" />
-        </svg>
-      </slot>
-    </span>
-    <div data-part="content" class="k-alert__content" :class="classNames?.content" :style="styles?.content">
-      <div v-if="message || $slots.title" data-part="title" class="k-alert__title" :class="classNames?.title" :style="styles?.title">
-        <slot name="title"><component v-if="message" :is="KNode" :node="message" /></slot>
-      </div>
-      <div
-        v-if="description || $slots.description"
-        data-part="description"
-        class="k-alert__description"
-        :class="classNames?.description"
-        :style="styles?.description"
-      >
-        <slot name="description"><component v-if="description" :is="KNode" :node="description" /></slot>
-      </div>
-    </div>
-    <div v-if="$slots.action" data-part="action" class="k-alert__action" :class="classNames?.action" :style="styles?.action">
-      <slot name="action" />
-    </div>
-    <button
-      v-if="closable"
-      type="button"
-      data-part="close"
-      class="k-alert__close"
-      :class="classNames?.close"
-      :style="styles?.close"
-      aria-label="关闭"
-      @click="onClose"
-    >
-      <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
-    </button>
-  </div>
-</template>
 
 <style>
 .k-alert {

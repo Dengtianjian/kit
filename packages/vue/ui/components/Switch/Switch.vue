@@ -1,3 +1,43 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <button
+    v-else
+    ref="rootEl"
+    class="k-switch"
+    :class="[
+      `k-switch--${size}`,
+      { 'is-checked': checked, 'is-disabled': isDisabled, 'is-loading': loading },
+      classNames?.root,
+    ]"
+    :style="styles?.root"
+    v-bind="rootAttrs"
+    v-on="rootOn"
+  >
+    <span class="k-switch__inner" aria-hidden="true">
+      <template v-if="checked">{{ checkedChildren }}</template>
+      <template v-else>{{ unCheckedChildren }}</template>
+    </span>
+    <span data-part="handle" class="k-switch__handle" :class="classNames?.handle" :style="styles?.handle">
+      <svg
+        v-if="loading"
+        class="k-switch__spinner"
+        viewBox="0 0 12 12"
+        width="0.72em"
+        height="0.72em"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.6"
+        aria-hidden="true"
+      >
+        <circle cx="6" cy="6" r="4.5" stroke-dasharray="18 8" />
+      </svg>
+    </span>
+  </button>
+</template>
+
 <script setup lang="ts">
 import { computed, ref, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -117,46 +157,6 @@ defineSlots<{
 
 defineExpose({ focus });
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <button
-    v-else
-    ref="rootEl"
-    class="k-switch"
-    :class="[
-      `k-switch--${size}`,
-      { 'is-checked': checked, 'is-disabled': isDisabled, 'is-loading': loading },
-      classNames?.root,
-    ]"
-    :style="styles?.root"
-    v-bind="rootAttrs"
-    v-on="rootOn"
-  >
-    <span class="k-switch__inner" aria-hidden="true">
-      <template v-if="checked">{{ checkedChildren }}</template>
-      <template v-else>{{ unCheckedChildren }}</template>
-    </span>
-    <span data-part="handle" class="k-switch__handle" :class="classNames?.handle" :style="styles?.handle">
-      <svg
-        v-if="loading"
-        class="k-switch__spinner"
-        viewBox="0 0 12 12"
-        width="0.72em"
-        height="0.72em"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.6"
-        aria-hidden="true"
-      >
-        <circle cx="6" cy="6" r="4.5" stroke-dasharray="18 8" />
-      </svg>
-    </span>
-  </button>
-</template>
 
 <style>
 .k-switch {

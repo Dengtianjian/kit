@@ -122,17 +122,30 @@ export function useOverlayPosition(opts: {
     window.removeEventListener('resize', reposition);
   }
 
+  let sizeObserver: ResizeObserver | null = null;
   watch(opts.visible, async (v) => {
     if (v) {
       popupStyle.value = { position: frame.mode.value, visibility: 'hidden' }; // 两遍渲染：先隐藏测量再落位
       attach();
       await nextTick();
       place();
+      // 内容/断点变化（如移动端面板重排）会改变高度：重新落位，避免弹层越出视口
+      if (typeof ResizeObserver !== 'undefined' && opts.popup.value) {
+        sizeObserver?.disconnect();
+        sizeObserver = new ResizeObserver(() => place());
+        sizeObserver.observe(opts.popup.value);
+      }
     } else {
+      sizeObserver?.disconnect();
+      sizeObserver = null;
       detach();
     }
   });
-  onBeforeUnmount(detach);
+  onBeforeUnmount(() => {
+    sizeObserver?.disconnect();
+    sizeObserver = null;
+    detach();
+  });
 
   return { popupStyle, actualPlacement, place };
 }

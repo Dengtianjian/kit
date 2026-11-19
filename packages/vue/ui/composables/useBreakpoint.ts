@@ -10,15 +10,19 @@ export const DEFAULT_BREAKPOINTS = { xs: 0, sm: 576, md: 768, lg: 992, xl: 1200,
 
 export type KBreakpoint = keyof typeof DEFAULT_BREAKPOINTS;
 
-/** 是否移动端视口 = width < md（§8.1） */
-export function useBreakpoint(overrides?: Partial<typeof DEFAULT_BREAKPOINTS>): {
+export interface KBreakpointState {
   current: Ref<KBreakpoint>;
   isMobile: Ref<boolean>;
-} {
-  const bp = { ...DEFAULT_BREAKPOINTS, ...overrides };
+}
+
+interface DisposableState extends KBreakpointState {
+  dispose: () => void;
+}
+
+function createState(bp: Record<KBreakpoint, number>): DisposableState {
   // SSR：matchMedia 不存在，返回保守档 'md'（首屏列宽以 CSS 断点为准，JS 结果仅用于行为，规格 §6）
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return { current: ref<KBreakpoint>('md'), isMobile: ref(false) };
+    return { current: ref<KBreakpoint>('md'), isMobile: ref(false), dispose: () => {} };
   }
   // 从高到低找第一个满足 min-width 的档
   const order: KBreakpoint[] = ['xxl', 'xl', 'lg', 'md', 'sm'];
@@ -40,11 +44,32 @@ export function useBreakpoint(overrides?: Partial<typeof DEFAULT_BREAKPOINTS>): 
     q.mql.addEventListener('change', onChange);
   }
 
-  onScopeDispose(() => {
-    for (const q of queries) {
-      q.mql.removeEventListener('change', onChange);
-    }
-  });
+  return {
+    current,
+    isMobile,
+    dispose: () => {
+      for (const q of queries) {
+        q.mql.removeEventListener('change', onChange);
+      }
+    },
+  };
+}
 
-  return { current, isMobile };
+/** 全库共享的断点状态：一套 MQL 服务所有响应式 prop，避免每实例 5 个监听器 */
+let sharedState: KBreakpointState | null = null;
+
+export function getSharedBreakpoint(): KBreakpointState {
+  if (!sharedState) {
+    const state = createState(DEFAULT_BREAKPOINTS);
+    sharedState = { current: state.current, isMobile: state.isMobile };
+  }
+  return sharedState;
+}
+
+/** 是否移动端视口 = width < md（§8.1）；不传 overrides 时复用共享断点 */
+export function useBreakpoint(overrides?: Partial<typeof DEFAULT_BREAKPOINTS>): KBreakpointState {
+  if (!overrides) return getSharedBreakpoint();
+  const state = createState({ ...DEFAULT_BREAKPOINTS, ...overrides });
+  onScopeDispose(state.dispose);
+  return { current: state.current, isMobile: state.isMobile };
 }

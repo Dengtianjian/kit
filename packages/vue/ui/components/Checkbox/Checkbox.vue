@@ -1,3 +1,28 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <label
+    v-else
+    class="k-checkbox"
+    :class="[{ 'is-checked': isChecked, 'is-indeterminate': indeterminate, 'is-disabled': isDisabled }, classNames?.root]"
+    :style="styles?.root"
+    v-bind="rootAttrs"
+  >
+    <input
+      ref="inputEl"
+      class="k-checkbox__input"
+      :class="classNames?.input"
+      :style="styles?.input"
+      v-bind="inputAttrs"
+      v-on="inputOn"
+    />
+    <span data-part="box" class="k-checkbox__box" :class="classNames?.box" :style="styles?.box" aria-hidden="true"></span>
+    <span data-part="text" class="k-checkbox__text" :class="classNames?.text" :style="styles?.text"><slot /></span>
+  </label>
+</template>
+
 <script setup lang="ts">
 import { computed, inject, ref, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -110,31 +135,6 @@ defineSlots<{
 
 defineExpose({ inputEl, focus: () => inputEl.value?.focus() });
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <label
-    v-else
-    class="k-checkbox"
-    :class="[{ 'is-checked': isChecked, 'is-indeterminate': indeterminate, 'is-disabled': isDisabled }, classNames?.root]"
-    :style="styles?.root"
-    v-bind="rootAttrs"
-  >
-    <input
-      ref="inputEl"
-      class="k-checkbox__input"
-      :class="classNames?.input"
-      :style="styles?.input"
-      v-bind="inputAttrs"
-      v-on="inputOn"
-    />
-    <span data-part="box" class="k-checkbox__box" :class="classNames?.box" :style="styles?.box" aria-hidden="true"></span>
-    <span data-part="text" class="k-checkbox__text" :class="classNames?.text" :style="styles?.text"><slot /></span>
-  </label>
-</template>
 
 <style>
 .k-checkbox {

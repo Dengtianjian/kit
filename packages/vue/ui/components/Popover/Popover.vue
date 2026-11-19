@@ -1,3 +1,49 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <template v-else>
+  <span
+    ref="triggerEl"
+    v-bind="triggerAttrs"
+    class="k-popover__trigger"
+    v-on="triggerOn"
+  ><slot name="trigger" /></span>
+
+  <Teleport :to="teleportTarget" defer>
+    <Transition name="k-popover">
+    <div
+      v-if="visible"
+      ref="popupEl"
+      v-bind="popupAttrs"
+      :style="styles?.root"
+      v-on="popupOn"
+    >
+      <span v-if="arrow" class="k-popover__arrow" aria-hidden="true" />
+      <div class="k-popover__card">
+        <div v-if="title || $slots.title" data-part="title" class="k-popover__title" :class="classNames?.title" :style="styles?.title">
+          <slot name="title">{{ title }}</slot>
+          <button
+            v-if="closable"
+            type="button"
+            class="k-popover__close"
+            aria-label="关闭"
+            @click="setOpen(false)"
+          >
+            <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
+          </button>
+        </div>
+        <div data-part="content" class="k-popover__content" :class="classNames?.content" :style="styles?.content">
+          <slot>{{ content }}</slot>
+        </div>
+      </div>
+    </div>
+    </Transition>
+  </Teleport>
+  </template>
+</template>
+
 <script setup lang="ts">
 import { computed, getCurrentInstance, onMounted, ref, useSlots } from 'vue';
 import type { CSSProperties, Ref, VNodeChild } from 'vue';
@@ -178,52 +224,6 @@ defineSlots<{
   render?(scope: KPopoverRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <template v-else>
-  <span
-    ref="triggerEl"
-    v-bind="triggerAttrs"
-    class="k-popover__trigger"
-    v-on="triggerOn"
-  ><slot name="trigger" /></span>
-
-  <Teleport :to="teleportTarget" defer>
-    <Transition name="k-popover">
-    <div
-      v-if="visible"
-      ref="popupEl"
-      v-bind="popupAttrs"
-      :style="styles?.root"
-      v-on="popupOn"
-    >
-      <span v-if="arrow" class="k-popover__arrow" aria-hidden="true" />
-      <div class="k-popover__card">
-        <div v-if="title || $slots.title" data-part="title" class="k-popover__title" :class="classNames?.title" :style="styles?.title">
-          <slot name="title">{{ title }}</slot>
-          <button
-            v-if="closable"
-            type="button"
-            class="k-popover__close"
-            aria-label="关闭"
-            @click="setOpen(false)"
-          >
-            <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
-          </button>
-        </div>
-        <div data-part="content" class="k-popover__content" :class="classNames?.content" :style="styles?.content">
-          <slot>{{ content }}</slot>
-        </div>
-      </div>
-    </div>
-    </Transition>
-  </Teleport>
-  </template>
-</template>
 
 <style>
 .k-popover__trigger {

@@ -5,7 +5,8 @@ import type { CSSProperties, VNode } from 'vue';
  * notification 实例 API（挂 useKApp().notification，无全局静态），对齐 antd v6 API 面：
  * title/description/actions/closable(number|false)/duration(number|false)/placement 六值/
  * showProgress/pauseOnHover/maxCount。
- * 队列由 <NotificationHolder> 按 placement 分列渲染（滚动容器 + 进出场动画在 Holder）。
+ * 队列由 <NotificationHolder> 按 placement 分列渲染：同一方位只有一个列表，
+ * 不同方位各自一个（滚动容器 + 进出场动画在 Holder）。
  */
 
 export type KNotificationType = 'info' | 'success' | 'error' | 'warning';
@@ -63,6 +64,8 @@ export interface KNotificationGlobalConfig {
   pauseOnHover?: boolean;
   /** 同列数量上限，超限挤掉最旧一条 */
   maxCount?: number;
+  /** 同列堆叠显示上限（默认 3；0 = 关闭堆叠，全部平铺） */
+  stackLimit?: number;
 }
 
 export interface KNotificationHandle {
@@ -78,6 +81,8 @@ export interface KNotificationApi {
   destroy: (key: string) => void;
   destroyAll: () => void;
   config: (options: KNotificationGlobalConfig) => void;
+  /** 读取当前全局默认（用于 UI 回显 config 状态） */
+  getConfig: () => KNotificationGlobalConfig;
 }
 
 export interface KNotificationHolderItem {
@@ -172,6 +177,7 @@ export function createNotificationService(): KNotificationService {
     config: (options) => {
       global.value = { ...global.value, ...options };
     },
+    getConfig: () => global.value,
   };
 
   return { api, items, global, remove };

@@ -1,3 +1,26 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <component
+    :is="tag"
+    v-else
+    :class="[
+      'k-link',
+      `k-link--${type}`,
+      `k-link--underline-${underline}`,
+      { 'is-disabled': disabled },
+      classNames?.root,
+    ]"
+    :style="rootStyle"
+    :to="to"
+    v-bind="rootAttrs"
+  >
+    <slot />
+  </component>
+</template>
+
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
 import { RouterLink } from 'vue-router';
@@ -107,29 +130,6 @@ defineSlots<{
   render?(scope: KLinkRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <component
-    :is="tag"
-    v-else
-    :class="[
-      'k-link',
-      `k-link--${type}`,
-      `k-link--underline-${underline}`,
-      { 'is-disabled': disabled },
-      classNames?.root,
-    ]"
-    :style="rootStyle"
-    :to="to"
-    v-bind="rootAttrs"
-  >
-    <slot />
-  </component>
-</template>
 
 <style>
 

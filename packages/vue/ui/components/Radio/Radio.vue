@@ -1,3 +1,35 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <label
+    v-else
+    class="k-radio"
+    :class="[
+      isButton ? 'k-radio--button' : 'k-radio--circle',
+      { 'is-checked': isChecked, 'is-disabled': isDisabled },
+      classNames?.root,
+    ]"
+    :style="styles?.root"
+    v-bind="rootAttrs"
+  >
+    <input
+      ref="inputEl"
+      class="k-radio__input"
+      :class="classNames?.input"
+      :style="styles?.input"
+      v-bind="inputAttrs"
+      v-on="inputOn"
+    />
+    <template v-if="!isButton">
+      <span data-part="dot" class="k-radio__dot" :class="classNames?.dot" :style="styles?.dot" aria-hidden="true"></span>
+      <span data-part="text" class="k-radio__text" :class="classNames?.text" :style="styles?.text"><slot /></span>
+    </template>
+    <span v-else class="k-radio__button-label" :style="styles?.text"><slot /></span>
+  </label>
+</template>
+
 <script setup lang="ts">
 import { computed, inject, ref, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -101,38 +133,6 @@ defineSlots<{
 
 defineExpose({ inputEl, focus: () => inputEl.value?.focus() });
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <label
-    v-else
-    class="k-radio"
-    :class="[
-      isButton ? 'k-radio--button' : 'k-radio--circle',
-      { 'is-checked': isChecked, 'is-disabled': isDisabled },
-      classNames?.root,
-    ]"
-    :style="styles?.root"
-    v-bind="rootAttrs"
-  >
-    <input
-      ref="inputEl"
-      class="k-radio__input"
-      :class="classNames?.input"
-      :style="styles?.input"
-      v-bind="inputAttrs"
-      v-on="inputOn"
-    />
-    <template v-if="!isButton">
-      <span data-part="dot" class="k-radio__dot" :class="classNames?.dot" :style="styles?.dot" aria-hidden="true"></span>
-      <span data-part="text" class="k-radio__text" :class="classNames?.text" :style="styles?.text"><slot /></span>
-    </template>
-    <span v-else class="k-radio__button-label" :style="styles?.text"><slot /></span>
-  </label>
-</template>
 
 <style>
 .k-radio {

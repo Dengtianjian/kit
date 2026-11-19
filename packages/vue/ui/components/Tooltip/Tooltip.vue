@@ -1,3 +1,35 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <template v-else>
+  <span
+    ref="triggerEl"
+    v-bind="triggerAttrs"
+    class="k-tooltip__trigger"
+    v-on="triggerOn"
+  ><slot name="trigger" /></span>
+
+  <Teleport :to="teleportTarget" defer>
+    <Transition name="k-tooltip">
+    <div
+      v-if="visible"
+      ref="popupEl"
+      v-bind="popupAttrs"
+      :style="styles?.root"
+      v-on="popupOn"
+    >
+      <span v-if="arrow" class="k-tooltip__arrow" aria-hidden="true" />
+      <div class="k-tooltip__inner">
+        <slot><component :is="KNode" :node="content ?? title" /></slot>
+      </div>
+    </div>
+    </Transition>
+  </Teleport>
+  </template>
+</template>
+
 <script setup lang="ts">
 import { computed, getCurrentInstance, onMounted, ref, useSlots } from 'vue';
 import type { CSSProperties, Ref, VNode, VNodeChild } from 'vue';
@@ -173,38 +205,6 @@ defineSlots<{
   render?(scope: KTooltipRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <template v-else>
-  <span
-    ref="triggerEl"
-    v-bind="triggerAttrs"
-    class="k-tooltip__trigger"
-    v-on="triggerOn"
-  ><slot name="trigger" /></span>
-
-  <Teleport :to="teleportTarget" defer>
-    <Transition name="k-tooltip">
-    <div
-      v-if="visible"
-      ref="popupEl"
-      v-bind="popupAttrs"
-      :style="styles?.root"
-      v-on="popupOn"
-    >
-      <span v-if="arrow" class="k-tooltip__arrow" aria-hidden="true" />
-      <div class="k-tooltip__inner">
-        <slot><component :is="KNode" :node="content ?? title" /></slot>
-      </div>
-    </div>
-    </Transition>
-  </Teleport>
-  </template>
-</template>
 
 <style>
 .k-tooltip__trigger {

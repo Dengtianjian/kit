@@ -1,3 +1,13 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <p v-else data-part="root" :class="['k-paragraph', classNames?.root]" :style="styles?.root">
+    <slot />
+  </p>
+</template>
+
 <script setup lang="ts">
 import { useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -34,16 +44,6 @@ defineSlots<{
   render?(scope: KParagraphRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <p v-else data-part="root" :class="['k-paragraph', classNames?.root]" :style="styles?.root">
-    <slot />
-  </p>
-</template>
 
 <style>
 

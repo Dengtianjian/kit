@@ -1,6 +1,18 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <aside v-else data-part="root" :class="['k-layout-sider', classNames?.root]" :style="rootStyle">
+    <slot />
+  </aside>
+</template>
+
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
+import { useResponsiveValue } from '../../composables/useResponsiveValue';
+import type { KResponsiveValue, KResponsiveMap } from '../../composables/useResponsiveValue';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 
@@ -15,8 +27,8 @@ export interface KLayoutSiderRenderScope {
 }
 
 interface KLayoutSiderProps {
-  /** 默认 208 = 16×13 模度；折叠属 P4 Menu 场景，本批不做 */
-  width?: number;
+  /** 默认 208 = 16×13 模度；对象/字符串按断点取值（如 `'xs:160 md:208'`）；折叠属 P4 Menu 场景，本批不做 */
+  width?: number | KResponsiveMap<number> | string;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
   render?: KRenderFn<KLayoutSiderRenderScope>;
   classNames?: { root?: string };
@@ -25,9 +37,14 @@ interface KLayoutSiderProps {
 
 const props = defineProps<KLayoutSiderProps>();
 
+const resolvedWidth = useResponsiveValue<number>(
+  () => props.width as KResponsiveValue<number> | undefined,
+  { coerce: Number },
+);
+
 /** 仅在显式传值时落内联，否则让 createTheme 组件令牌与 CSS 缺省依次生效 */
 const varStyle = computed<CSSProperties>(() =>
-  props.width !== undefined ? { '--k-layout-sider-width': `${props.width}px` } : {},
+  resolvedWidth.value !== undefined ? { '--k-layout-sider-width': `${resolvedWidth.value}px` } : {},
 );
 
 const rootStyle = computed<CSSProperties>(() => ({ ...varStyle.value, ...props.styles?.root }));
@@ -37,7 +54,7 @@ const rootAttrs = computed(() => ({ 'data-part': 'root', style: varStyle.value }
 
 const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KLayoutSiderRenderScope>(
   () => props.render,
-  () => ({ width: props.width, rootAttrs: rootAttrs.value, slots }),
+  () => ({ width: resolvedWidth.value, rootAttrs: rootAttrs.value, slots }),
 );
 
 defineSlots<{
@@ -45,16 +62,6 @@ defineSlots<{
   render?(scope: KLayoutSiderRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <aside v-else data-part="root" :class="['k-layout-sider', classNames?.root]" :style="rootStyle">
-    <slot />
-  </aside>
-</template>
 
 <style>
 

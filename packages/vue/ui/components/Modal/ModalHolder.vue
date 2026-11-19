@@ -1,3 +1,25 @@
+<template>
+  <KModal
+    v-for="it in svc.items.value"
+    :key="it.id"
+    :open="!it.closing"
+    :title="it.props.title"
+    :content="it.props.content"
+    :icon="iconFor(it)"
+    :width="it.props.width"
+    :mask="it.props.mask ?? true"
+    :mask-closable="it.props.maskClosable ?? true"
+    :keyboard="it.props.keyboard ?? true"
+    :draggable="it.props.draggable ?? false"
+    :placement="it.props.placement"
+    :closable="true"
+    :source="it.props.source"
+    :class-names="{ root: `k-modal-holder is-${it.type}` }"
+    @close="onClose(it)"
+    @after-close="svc.remove(it)"
+  />
+</template>
+
 <script setup lang="ts">
 import { h } from 'vue';
 import KModal from './Modal.vue';
@@ -43,28 +65,6 @@ function onClose(item: KModalHolderItem) {
   item.closing = true;
 }
 </script>
-
-<template>
-  <KModal
-    v-for="it in svc.items.value"
-    :key="it.id"
-    :open="!it.closing"
-    :title="it.props.title"
-    :content="it.props.content"
-    :icon="iconFor(it)"
-    :width="it.props.width"
-    :mask="it.props.mask ?? true"
-    :mask-closable="it.props.maskClosable ?? true"
-    :keyboard="it.props.keyboard ?? true"
-    :draggable="it.props.draggable ?? false"
-    :placement="it.props.placement"
-    :closable="true"
-    :source="it.props.source"
-    :class-names="{ root: `k-modal-holder is-${it.type}` }"
-    @close="onClose(it)"
-    @after-close="svc.remove(it)"
-  />
-</template>
 
 <style>
 /* 类型图标着色（按 Holder 根类命中，KModal 结构不感知业务类型） */

@@ -1,3 +1,120 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <template v-else>
+    <Teleport to="body">
+      <Transition name="k-preview-fade">
+        <div
+          v-if="openModel"
+          ref="rootEl"
+          v-bind="rootAttrs"
+          :class="[rootClasses, classNames?.root]"
+          :style="styles?.root"
+          v-on="rootOn"
+        >
+          <div
+            data-part="mask"
+            class="k-preview__mask"
+            :class="classNames?.mask"
+            :style="styles?.mask"
+            v-on="maskOn"
+          />
+          <div
+            ref="stageEl"
+            data-part="stage"
+            class="k-preview__stage"
+            :class="[classNames?.stage, { 'is-gesturing': gesturing }]"
+            :style="styles?.stage"
+            v-on="stageOn"
+          >
+            <template v-if="currentItem">
+              <slot v-if="$slots.item" name="item" :item="currentItem" :index="safeCurrent" />
+              <Transition
+                v-else-if="(currentItem.type ?? 'image') === 'image'"
+                :name="`k-preview-slide-${slideDir}`"
+                mode="out-in"
+              >
+                <div :key="safeCurrent" class="k-preview__slide">
+                  <img
+                    v-bind="imageAttrs"
+                    class="k-preview__img"
+                    :class="classNames?.image"
+                    :style="[imageStyle, styles?.image]"
+                  />
+                </div>
+              </Transition>
+              <div v-else class="k-preview__unsupported">该文件类型暂不支持预览</div>
+            </template>
+            <span v-else class="k-preview__empty">暂无可预览内容</span>
+          </div>
+
+          <button
+            v-if="closable"
+            type="button"
+            data-part="close"
+            class="k-preview__close"
+            :class="classNames?.close"
+            :style="styles?.close"
+            aria-label="关闭"
+            v-on="closeOn"
+          >
+            <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
+          </button>
+
+          <button
+            v-if="hasPrev"
+            type="button"
+            data-part="nav"
+            class="k-preview__nav k-preview__nav--prev"
+            :class="classNames?.nav"
+            :style="styles?.nav"
+            aria-label="上一张"
+            v-on="prevOn"
+          >‹</button>
+          <button
+            v-if="hasNext"
+            type="button"
+            data-part="nav"
+            class="k-preview__nav k-preview__nav--next"
+            :class="classNames?.nav"
+            :style="styles?.nav"
+            aria-label="下一张"
+            v-on="nextOn"
+          >›</button>
+
+          <div
+            v-if="toolbar"
+            data-part="toolbar"
+            class="k-preview__toolbar"
+            :class="classNames?.toolbar"
+            :style="styles?.toolbar"
+          >
+            <button type="button" class="k-preview__tool" aria-label="缩小" v-on="zoomOutOn">−</button>
+            <button type="button" class="k-preview__scale" title="重置为 100%" v-on="resetOn">{{ Math.round(scale * 100) }}%</button>
+            <button type="button" class="k-preview__tool" aria-label="放大" v-on="zoomInOn">+</button>
+            <span class="k-preview__tool-divider" aria-hidden="true" />
+            <button type="button" class="k-preview__tool" aria-label="逆时针旋转" title="逆时针旋转 90°" v-on="rotateLeftOn">
+              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6" /><path d="M2.8 2.6V5h2.4" /></svg>
+            </button>
+            <button type="button" class="k-preview__tool" aria-label="顺时针旋转" title="顺时针旋转 90°" v-on="rotateRightOn">
+              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M13.2 2.6V5h-2.4" /></svg>
+            </button>
+            <button type="button" class="k-preview__tool" :aria-pressed="flipX" aria-label="水平翻转" title="水平翻转" v-on="flipOn">
+              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M8 2.5v11" /><path d="M6.4 4.2 3 8l3.4 3.8z" /><path d="M9.6 4.2 13 8l-3.4 3.8z" /></svg>
+            </button>
+          </div>
+
+          <div v-if="count > 1" data-part="counter" class="k-preview__counter" :class="classNames?.counter" :style="styles?.counter">
+            {{ safeCurrent + 1 }} / {{ count }}
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+  </template>
+</template>
+
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue';
 import type { CSSProperties, Ref, VNodeChild } from 'vue';
@@ -482,123 +599,6 @@ defineSlots<{
 
 defineExpose({ open: () => setOpen(true), close, next, prev, setCurrent, setScale, rotateBy, flip, resetView });
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <template v-else>
-    <Teleport to="body">
-      <Transition name="k-preview-fade">
-        <div
-          v-if="openModel"
-          ref="rootEl"
-          v-bind="rootAttrs"
-          :class="[rootClasses, classNames?.root]"
-          :style="styles?.root"
-          v-on="rootOn"
-        >
-          <div
-            data-part="mask"
-            class="k-preview__mask"
-            :class="classNames?.mask"
-            :style="styles?.mask"
-            v-on="maskOn"
-          />
-          <div
-            ref="stageEl"
-            data-part="stage"
-            class="k-preview__stage"
-            :class="[classNames?.stage, { 'is-gesturing': gesturing }]"
-            :style="styles?.stage"
-            v-on="stageOn"
-          >
-            <template v-if="currentItem">
-              <slot v-if="$slots.item" name="item" :item="currentItem" :index="safeCurrent" />
-              <Transition
-                v-else-if="(currentItem.type ?? 'image') === 'image'"
-                :name="`k-preview-slide-${slideDir}`"
-                mode="out-in"
-              >
-                <div :key="safeCurrent" class="k-preview__slide">
-                  <img
-                    v-bind="imageAttrs"
-                    class="k-preview__img"
-                    :class="classNames?.image"
-                    :style="[imageStyle, styles?.image]"
-                  />
-                </div>
-              </Transition>
-              <div v-else class="k-preview__unsupported">该文件类型暂不支持预览</div>
-            </template>
-            <span v-else class="k-preview__empty">暂无可预览内容</span>
-          </div>
-
-          <button
-            v-if="closable"
-            type="button"
-            data-part="close"
-            class="k-preview__close"
-            :class="classNames?.close"
-            :style="styles?.close"
-            aria-label="关闭"
-            v-on="closeOn"
-          >
-            <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
-          </button>
-
-          <button
-            v-if="hasPrev"
-            type="button"
-            data-part="nav"
-            class="k-preview__nav k-preview__nav--prev"
-            :class="classNames?.nav"
-            :style="styles?.nav"
-            aria-label="上一张"
-            v-on="prevOn"
-          >‹</button>
-          <button
-            v-if="hasNext"
-            type="button"
-            data-part="nav"
-            class="k-preview__nav k-preview__nav--next"
-            :class="classNames?.nav"
-            :style="styles?.nav"
-            aria-label="下一张"
-            v-on="nextOn"
-          >›</button>
-
-          <div
-            v-if="toolbar"
-            data-part="toolbar"
-            class="k-preview__toolbar"
-            :class="classNames?.toolbar"
-            :style="styles?.toolbar"
-          >
-            <button type="button" class="k-preview__tool" aria-label="缩小" v-on="zoomOutOn">−</button>
-            <button type="button" class="k-preview__scale" title="重置为 100%" v-on="resetOn">{{ Math.round(scale * 100) }}%</button>
-            <button type="button" class="k-preview__tool" aria-label="放大" v-on="zoomInOn">+</button>
-            <span class="k-preview__tool-divider" aria-hidden="true" />
-            <button type="button" class="k-preview__tool" aria-label="逆时针旋转" title="逆时针旋转 90°" v-on="rotateLeftOn">
-              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6" /><path d="M2.8 2.6V5h2.4" /></svg>
-            </button>
-            <button type="button" class="k-preview__tool" aria-label="顺时针旋转" title="顺时针旋转 90°" v-on="rotateRightOn">
-              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M13.2 2.6V5h-2.4" /></svg>
-            </button>
-            <button type="button" class="k-preview__tool" :aria-pressed="flipX" aria-label="水平翻转" title="水平翻转" v-on="flipOn">
-              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M8 2.5v11" /><path d="M6.4 4.2 3 8l3.4 3.8z" /><path d="M9.6 4.2 13 8l-3.4 3.8z" /></svg>
-            </button>
-          </div>
-
-          <div v-if="count > 1" data-part="counter" class="k-preview__counter" :class="classNames?.counter" :style="styles?.counter">
-            {{ safeCurrent + 1 }} / {{ count }}
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-  </template>
-</template>
 
 <style>
 /* ---------- 全屏预览：暗色舞台 + 工具栏（破格登记：遮罩恒定深色，同 Modal mask 先例） ---------- */

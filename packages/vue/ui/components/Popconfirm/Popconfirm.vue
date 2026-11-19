@@ -1,3 +1,55 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <template v-else>
+  <span
+    ref="triggerEl"
+    v-bind="triggerAttrs"
+    class="k-popconfirm__trigger"
+    v-on="triggerOn"
+  ><slot name="trigger" /></span>
+
+  <Teleport :to="teleportTarget" defer>
+    <Transition name="k-popconfirm">
+    <div
+      v-if="visible"
+      ref="popupEl"
+      v-bind="popupAttrs"
+      :style="styles?.root"
+    >
+      <span v-if="arrow" class="k-popconfirm__arrow" aria-hidden="true" />
+      <div class="k-popconfirm__card">
+        <div class="k-popconfirm__message">
+          <span class="k-popconfirm__icon" :class="`k-popconfirm__icon--${icon}`" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <path v-if="icon === 'warning'" d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8 4.8v4M8 11.1l.02 0" />
+              <path v-else d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8 7.3v3.8M8 4.9l.02 0" />
+            </svg>
+          </span>
+          <div class="k-popconfirm__text">
+            <slot>
+              <div class="k-popconfirm__title">
+                <slot name="title">{{ title }}</slot>
+              </div>
+              <div v-if="description || $slots.description" class="k-popconfirm__description">
+                <slot name="description">{{ description }}</slot>
+              </div>
+            </slot>
+          </div>
+        </div>
+        <div class="k-popconfirm__footer">
+          <KButton size="xs" @click="onCancel">{{ cancelText }}</KButton>
+          <KButton size="xs" :type="okType" :loading="okLoading" @click="onConfirm">{{ okText }}</KButton>
+        </div>
+      </div>
+    </div>
+    </Transition>
+  </Teleport>
+  </template>
+</template>
+
 <script setup lang="ts">
 import { computed, getCurrentInstance, nextTick, ref, useSlots, watch } from 'vue';
 import type { CSSProperties, Ref, VNodeChild } from 'vue';
@@ -167,58 +219,6 @@ defineSlots<{
   render?(scope: KPopconfirmRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <template v-else>
-  <span
-    ref="triggerEl"
-    v-bind="triggerAttrs"
-    class="k-popconfirm__trigger"
-    v-on="triggerOn"
-  ><slot name="trigger" /></span>
-
-  <Teleport :to="teleportTarget" defer>
-    <Transition name="k-popconfirm">
-    <div
-      v-if="visible"
-      ref="popupEl"
-      v-bind="popupAttrs"
-      :style="styles?.root"
-    >
-      <span v-if="arrow" class="k-popconfirm__arrow" aria-hidden="true" />
-      <div class="k-popconfirm__card">
-        <div class="k-popconfirm__message">
-          <span class="k-popconfirm__icon" :class="`k-popconfirm__icon--${icon}`" aria-hidden="true">
-            <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-              <path v-if="icon === 'warning'" d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8 4.8v4M8 11.1l.02 0" />
-              <path v-else d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8 7.3v3.8M8 4.9l.02 0" />
-            </svg>
-          </span>
-          <div class="k-popconfirm__text">
-            <slot>
-              <div class="k-popconfirm__title">
-                <slot name="title">{{ title }}</slot>
-              </div>
-              <div v-if="description || $slots.description" class="k-popconfirm__description">
-                <slot name="description">{{ description }}</slot>
-              </div>
-            </slot>
-          </div>
-        </div>
-        <div class="k-popconfirm__footer">
-          <KButton size="xs" @click="onCancel">{{ cancelText }}</KButton>
-          <KButton size="xs" :type="okType" :loading="okLoading" @click="onConfirm">{{ okText }}</KButton>
-        </div>
-      </div>
-    </div>
-    </Transition>
-  </Teleport>
-  </template>
-</template>
 
 <style>
 .k-popconfirm__trigger {

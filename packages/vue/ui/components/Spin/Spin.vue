@@ -1,3 +1,49 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <div
+    v-else
+    v-bind="rootAttrs"
+    class="k-spin"
+    :class="[
+      `k-spin--${size}`,
+      { 'k-spin--nested': nested, 'is-spinning': visible },
+      classNames?.root,
+    ]"
+    :style="styles?.root"
+  >
+    <div
+      v-if="nested"
+      v-bind="nestedAttrs"
+      class="k-spin__nested"
+      :class="classNames?.nested"
+      :style="styles?.nested"
+    >
+      <slot />
+    </div>
+    <div
+      v-if="visible"
+      v-bind="indicatorAttrs"
+      class="k-spin__indicator"
+      :class="classNames?.indicator"
+      :style="styles?.indicator"
+    >
+      <slot name="indicator">
+        <span class="k-spin__dot" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <circle cx="8" cy="8" r="6.2" stroke-dasharray="26 13" />
+          </svg>
+        </span>
+      </slot>
+      <div v-if="tip" data-part="tip" class="k-spin__tip" :class="classNames?.tip" :style="styles?.tip">
+        <component :is="KNode" :node="tip" />
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useSlots, watch } from 'vue';
 import type { CSSProperties, VNode, VNodeChild } from 'vue';
@@ -100,52 +146,6 @@ defineSlots<{
   render?(scope: KSpinRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <div
-    v-else
-    v-bind="rootAttrs"
-    class="k-spin"
-    :class="[
-      `k-spin--${size}`,
-      { 'k-spin--nested': nested, 'is-spinning': visible },
-      classNames?.root,
-    ]"
-    :style="styles?.root"
-  >
-    <div
-      v-if="nested"
-      v-bind="nestedAttrs"
-      class="k-spin__nested"
-      :class="classNames?.nested"
-      :style="styles?.nested"
-    >
-      <slot />
-    </div>
-    <div
-      v-if="visible"
-      v-bind="indicatorAttrs"
-      class="k-spin__indicator"
-      :class="classNames?.indicator"
-      :style="styles?.indicator"
-    >
-      <slot name="indicator">
-        <span class="k-spin__dot" aria-hidden="true">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-            <circle cx="8" cy="8" r="6.2" stroke-dasharray="26 13" />
-          </svg>
-        </span>
-      </slot>
-      <div v-if="tip" data-part="tip" class="k-spin__tip" :class="classNames?.tip" :style="styles?.tip">
-        <component :is="KNode" :node="tip" />
-      </div>
-    </div>
-  </div>
-</template>
 
 <style>
 .k-spin {

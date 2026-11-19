@@ -1,3 +1,19 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <div
+    v-else
+    v-bind="rootAttrs"
+    class="k-control-group"
+    :class="[{ 'is-vertical': vertical, 'is-block': block }, classNames?.root]"
+    :style="styles?.root"
+  >
+    <slot />
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -54,22 +70,6 @@ defineSlots<{
   render?(scope: KControlGroupRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <div
-    v-else
-    v-bind="rootAttrs"
-    class="k-control-group"
-    :class="[{ 'is-vertical': vertical, 'is-block': block }, classNames?.root]"
-    :style="styles?.root"
-  >
-    <slot />
-  </div>
-</template>
 
 <style>
 .k-control-group {

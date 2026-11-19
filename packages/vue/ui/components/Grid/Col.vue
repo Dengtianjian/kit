@@ -1,3 +1,13 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <div v-else data-part="root" :class="[classes, classNames?.root]" :style="rootStyle">
+    <slot />
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, inject, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -93,16 +103,6 @@ defineSlots<{
   render?(scope: KColRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <div v-else data-part="root" :class="[classes, classNames?.root]" :style="rootStyle">
-    <slot />
-  </div>
-</template>
 
 <style>
 /* 列宽 class 矩阵随组件加载（CSS-first 预编译产物） */

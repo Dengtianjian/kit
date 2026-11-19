@@ -1,3 +1,60 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <span
+    v-else
+    class="k-input-number"
+    :class="[{ 'k-input-number--controls': showStep }, classNames?.root]"
+    :style="styles?.root"
+    v-bind="rootAttrs"
+  >
+    <KInput
+      ref="inputRef"
+      v-model="text"
+      class="k-input-number__inner"
+      :class="classNames?.input"
+      :style="styles?.input"
+      :size="size"
+      :variant="variant"
+      :status="status"
+      :placeholder="placeholder"
+      :disabled="disabled"
+      :readonly="readonly"
+      :id="id"
+      inputmode="decimal"
+      @focus="onFocus"
+      @blur="onBlur"
+      @keydown="onKeydown"
+    />
+    <span
+      v-if="showStep"
+      data-part="step"
+      class="k-input-number__step"
+      :class="classNames?.step"
+      :style="styles?.step"
+    >
+      <button
+        type="button"
+        aria-label="增加"
+        tabindex="-1"
+        @mousedown.prevent="stepUp"
+      >
+        <svg viewBox="0 0 10 6" width="1em" height="0.6em" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1 5l4-4 4 4" /></svg>
+      </button>
+      <button
+        type="button"
+        aria-label="减少"
+        tabindex="-1"
+        @mousedown.prevent="stepDown"
+      >
+        <svg viewBox="0 0 10 6" width="1em" height="0.6em" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1 1l4 4 4-4" /></svg>
+      </button>
+    </span>
+  </span>
+</template>
+
 <script setup lang="ts">
 import { computed, ref, useSlots, watch } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -70,6 +127,7 @@ interface KInputNumberProps {
 }
 
 const props = withDefaults(defineProps<KInputNumberProps>(), {
+  placeholder: '请输入数值',
   size: 'md',
   variant: 'outlined',
   step: 1,
@@ -223,63 +281,6 @@ defineExpose({
   inputEl: () => (inputRef.value as unknown as { inputEl?: HTMLInputElement } | null)?.inputEl,
 });
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <span
-    v-else
-    class="k-input-number"
-    :class="[{ 'k-input-number--controls': showStep }, classNames?.root]"
-    :style="styles?.root"
-    v-bind="rootAttrs"
-  >
-    <KInput
-      ref="inputRef"
-      v-model="text"
-      class="k-input-number__inner"
-      :class="classNames?.input"
-      :style="styles?.input"
-      :size="size"
-      :variant="variant"
-      :status="status"
-      :placeholder="placeholder"
-      :disabled="disabled"
-      :readonly="readonly"
-      :id="id"
-      inputmode="decimal"
-      @focus="onFocus"
-      @blur="onBlur"
-      @keydown="onKeydown"
-    />
-    <span
-      v-if="showStep"
-      data-part="step"
-      class="k-input-number__step"
-      :class="classNames?.step"
-      :style="styles?.step"
-    >
-      <button
-        type="button"
-        aria-label="增加"
-        tabindex="-1"
-        @mousedown.prevent="stepUp"
-      >
-        <svg viewBox="0 0 10 6" width="1em" height="0.6em" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1 5l4-4 4 4" /></svg>
-      </button>
-      <button
-        type="button"
-        aria-label="减少"
-        tabindex="-1"
-        @mousedown.prevent="stepDown"
-      >
-        <svg viewBox="0 0 10 6" width="1em" height="0.6em" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1 1l4 4 4-4" /></svg>
-      </button>
-    </span>
-  </span>
-</template>
 
 <style>
 /* ---------- 组合件：输入框视觉全走 KInput 部件变量，本组件只立步进列变量 ---------- */

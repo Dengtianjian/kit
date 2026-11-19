@@ -1,3 +1,73 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <div
+    v-else
+    v-bind="rootAttrs"
+    class="k-notification"
+    :class="[
+      type ? `k-notification--${type}` : '',
+      { 'is-hover-pause': pauseOnHover },
+      classNames?.root,
+    ]"
+    :style="styles?.root"
+    v-on="rootOn"
+  >
+    <span
+      v-if="icon !== null && (icon || type || $slots.icon)"
+      data-part="icon"
+      class="k-notification__icon"
+      :class="classNames?.icon"
+      :style="styles?.icon"
+      aria-hidden="true"
+    >
+      <slot name="icon">
+        <component :is="KNode" v-if="icon" :node="icon" />
+        <svg v-else-if="type" viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+          <path :d="ICON_PATH[type]" />
+        </svg>
+      </slot>
+    </span>
+    <div data-part="section" class="k-notification__section" :class="classNames?.section" :style="styles?.section">
+      <div v-if="title || $slots.title" data-part="title" class="k-notification__title" :class="classNames?.title" :style="styles?.title">
+        <slot name="title">
+          <component :is="KNode" :node="title" />
+        </slot>
+      </div>
+      <div v-if="description || $slots.description" data-part="description" class="k-notification__description" :class="classNames?.description" :style="styles?.description">
+        <slot name="description">
+          <component :is="KNode" :node="description" />
+        </slot>
+      </div>
+      <div v-if="actions || $slots.actions" data-part="actions" class="k-notification__actions" :class="classNames?.actions" :style="styles?.actions">
+        <slot name="actions">
+          <component :is="KNode" :node="actions" />
+        </slot>
+      </div>
+    </div>
+    <button
+      v-if="closable && closeIcon !== null"
+      type="button"
+      data-part="close"
+      class="k-notification__close"
+      :class="classNames?.close"
+      :style="styles?.close"
+      aria-label="关闭"
+      @click.stop="onClose"
+    >
+      <slot name="close">
+        <component :is="KNode" v-if="closeIcon" :node="closeIcon" />
+        <svg v-else viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
+      </slot>
+    </button>
+    <div v-if="showProgress && progressDuration" data-part="progress" class="k-notification__progress" :class="classNames?.progress" :style="styles?.progress">
+      <span class="k-notification__progress-bar" :style="{ animationDuration: `${progressDuration}s` }" />
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
 import type { CSSProperties, VNode, VNodeChild } from 'vue';
@@ -113,76 +183,6 @@ defineSlots<{
   render?(scope: KNotificationRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <div
-    v-else
-    v-bind="rootAttrs"
-    class="k-notification"
-    :class="[
-      type ? `k-notification--${type}` : '',
-      { 'is-hover-pause': pauseOnHover },
-      classNames?.root,
-    ]"
-    :style="styles?.root"
-    v-on="rootOn"
-  >
-    <span
-      v-if="icon !== null && (icon || type || $slots.icon)"
-      data-part="icon"
-      class="k-notification__icon"
-      :class="classNames?.icon"
-      :style="styles?.icon"
-      aria-hidden="true"
-    >
-      <slot name="icon">
-        <component :is="KNode" v-if="icon" :node="icon" />
-        <svg v-else-if="type" viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-          <path :d="ICON_PATH[type]" />
-        </svg>
-      </slot>
-    </span>
-    <div data-part="section" class="k-notification__section" :class="classNames?.section" :style="styles?.section">
-      <div v-if="title || $slots.title" data-part="title" class="k-notification__title" :class="classNames?.title" :style="styles?.title">
-        <slot name="title">
-          <component :is="KNode" :node="title" />
-        </slot>
-      </div>
-      <div v-if="description || $slots.description" data-part="description" class="k-notification__description" :class="classNames?.description" :style="styles?.description">
-        <slot name="description">
-          <component :is="KNode" :node="description" />
-        </slot>
-      </div>
-      <div v-if="actions || $slots.actions" data-part="actions" class="k-notification__actions" :class="classNames?.actions" :style="styles?.actions">
-        <slot name="actions">
-          <component :is="KNode" :node="actions" />
-        </slot>
-      </div>
-    </div>
-    <button
-      v-if="closable && closeIcon !== null"
-      type="button"
-      data-part="close"
-      class="k-notification__close"
-      :class="classNames?.close"
-      :style="styles?.close"
-      aria-label="关闭"
-      @click.stop="onClose"
-    >
-      <slot name="close">
-        <component :is="KNode" v-if="closeIcon" :node="closeIcon" />
-        <svg v-else viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
-      </slot>
-    </button>
-    <div v-if="showProgress && progressDuration" data-part="progress" class="k-notification__progress" :class="classNames?.progress" :style="styles?.progress">
-      <span class="k-notification__progress-bar" :style="{ animationDuration: `${progressDuration}s` }" />
-    </div>
-  </div>
-</template>
 
 <style>
 .k-notification {

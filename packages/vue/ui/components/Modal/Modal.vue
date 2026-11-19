@@ -1,3 +1,82 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <template v-else>
+  <span
+    v-if="$slots.trigger"
+    v-bind="triggerAttrs"
+    class="k-modal__trigger"
+    v-on="triggerOn"
+  ><slot name="trigger" /></span>
+
+  <Teleport :to="teleportTarget" defer>
+    <Transition name="k-modal" @after-leave="onAfterLeave">
+    <div
+      v-if="openState"
+      v-bind="rootAttrs"
+      class="k-modal"
+      :class="classNames?.root"
+      :style="styles?.root"
+    >
+      <div v-if="mask" v-bind="maskAttrs" class="k-modal__mask" :class="classNames?.mask" :style="styles?.mask" />
+      <div
+        v-bind="wrapAttrs"
+        class="k-modal__wrap"
+        :class="classNames?.wrap"
+        :style="styles?.wrap"
+        v-on="wrapOn"
+      >
+        <div
+          ref="dialogEl"
+          v-bind="dialogAttrs"
+          class="k-modal__dialog"
+          :class="[classNames?.dialog, { 'is-zoomed': zoomed }]"
+          :style="styles?.dialog"
+        >
+          <div
+            v-bind="headerAttrs"
+            class="k-modal__header"
+            :class="[classNames?.header, { 'is-draggable': draggable, 'is-dragging': dragging }]"
+            :style="styles?.header"
+            v-on="headerOn"
+          >
+            <div data-part="title" class="k-modal__title" :class="classNames?.title" :style="styles?.title">
+              <span v-if="icon" class="k-modal__icon" aria-hidden="true"><component :is="KNode" :node="icon" /></span>
+              <component v-if="title" :is="KNode" :node="title" />
+              <slot v-else name="title" />
+            </div>
+            <button
+              v-if="closable"
+              type="button"
+              class="k-modal__close"
+              aria-label="关闭"
+              @click="requestClose($event)"
+            >
+              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
+            </button>
+          </div>
+          <div data-part="body" class="k-modal__body" :class="classNames?.body" :style="styles?.body">
+            <slot><component :is="KNode" :node="content" /></slot>
+          </div>
+          <div
+            v-if="$slots.footer"
+            data-part="footer"
+            class="k-modal__footer"
+            :class="classNames?.footer"
+            :style="styles?.footer"
+          >
+            <slot name="footer" />
+          </div>
+        </div>
+      </div>
+    </div>
+    </Transition>
+  </Teleport>
+  </template>
+</template>
+
 <script lang="ts">
 /* 滚动锁模块计数：多模态叠层只由最后一个释放（普通 script 块 = 模块作用域） */
 import { installPointerRecorder } from '../../utils/interaction';
@@ -313,85 +392,6 @@ defineSlots<{
   render?(scope: KModalRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <template v-else>
-  <span
-    v-if="$slots.trigger"
-    v-bind="triggerAttrs"
-    class="k-modal__trigger"
-    v-on="triggerOn"
-  ><slot name="trigger" /></span>
-
-  <Teleport :to="teleportTarget" defer>
-    <Transition name="k-modal" @after-leave="onAfterLeave">
-    <div
-      v-if="openState"
-      v-bind="rootAttrs"
-      class="k-modal"
-      :class="classNames?.root"
-      :style="styles?.root"
-    >
-      <div v-if="mask" v-bind="maskAttrs" class="k-modal__mask" :class="classNames?.mask" :style="styles?.mask" />
-      <div
-        v-bind="wrapAttrs"
-        class="k-modal__wrap"
-        :class="classNames?.wrap"
-        :style="styles?.wrap"
-        v-on="wrapOn"
-      >
-        <div
-          ref="dialogEl"
-          v-bind="dialogAttrs"
-          class="k-modal__dialog"
-          :class="[classNames?.dialog, { 'is-zoomed': zoomed }]"
-          :style="styles?.dialog"
-        >
-          <div
-            v-bind="headerAttrs"
-            class="k-modal__header"
-            :class="[classNames?.header, { 'is-draggable': draggable, 'is-dragging': dragging }]"
-            :style="styles?.header"
-            v-on="headerOn"
-          >
-            <div data-part="title" class="k-modal__title" :class="classNames?.title" :style="styles?.title">
-              <span v-if="icon" class="k-modal__icon" aria-hidden="true"><component :is="KNode" :node="icon" /></span>
-              <component v-if="title" :is="KNode" :node="title" />
-              <slot v-else name="title" />
-            </div>
-            <button
-              v-if="closable"
-              type="button"
-              class="k-modal__close"
-              aria-label="关闭"
-              @click="requestClose($event)"
-            >
-              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
-            </button>
-          </div>
-          <div data-part="body" class="k-modal__body" :class="classNames?.body" :style="styles?.body">
-            <slot><component :is="KNode" :node="content" /></slot>
-          </div>
-          <div
-            v-if="$slots.footer"
-            data-part="footer"
-            class="k-modal__footer"
-            :class="classNames?.footer"
-            :style="styles?.footer"
-          >
-            <slot name="footer" />
-          </div>
-        </div>
-      </div>
-    </div>
-    </Transition>
-  </Teleport>
-  </template>
-</template>
 
 <style>
 .k-modal__trigger {

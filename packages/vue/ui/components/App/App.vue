@@ -1,3 +1,13 @@
+<template>
+  <component v-if="props.component !== false" :is="props.component" ref="root" class="k-app" data-part="root">
+    <slot />
+  </component>
+  <slot v-else />
+  <ModalHolder :svc="modalSvc" />
+  <MessageHolder :svc="messageSvc" />
+  <NotificationHolder :svc="notificationSvc" />
+</template>
+
 <script setup lang="ts">
 import { ref } from 'vue';
 import type { Component } from 'vue';
@@ -33,16 +43,6 @@ provideKApp({
   notification: notificationSvc.api,
 });
 </script>
-
-<template>
-  <component v-if="props.component !== false" :is="props.component" ref="root" class="k-app" data-part="root">
-    <slot />
-  </component>
-  <slot v-else />
-  <ModalHolder :svc="modalSvc" />
-  <MessageHolder :svc="messageSvc" />
-  <NotificationHolder :svc="notificationSvc" />
-</template>
 
 <style>
 /* 应用根：token 基线落到 DOM 继承链（antd App 同款职责——不装它，文字走宿主默认样式） */

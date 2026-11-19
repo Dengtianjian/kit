@@ -1,3 +1,19 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <component
+    :is="tag"
+    v-else
+    data-part="root"
+    :class="['k-text', type !== 'default' && `k-text--${type}`, gradient && 'k-text--gradient', classNames?.root]"
+    :style="rootStyle"
+  >
+    <slot />
+  </component>
+</template>
+
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -95,22 +111,6 @@ defineSlots<{
   render?(scope: KTextRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <component
-    :is="tag"
-    v-else
-    data-part="root"
-    :class="['k-text', type !== 'default' && `k-text--${type}`, gradient && 'k-text--gradient', classNames?.root]"
-    :style="rootStyle"
-  >
-    <slot />
-  </component>
-</template>
 
 <style>
 

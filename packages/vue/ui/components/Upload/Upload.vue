@@ -1,14 +1,222 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <template v-else>
+    <div
+      ref="rootEl"
+      v-bind="rootAttrs"
+      :class="[rootClasses, classNames?.root]"
+      :style="styles?.root"
+      v-on="rootOn"
+    >
+      <!-- 卡片墙（方/圆）：file tiles + 添加 tile -->
+      <TransitionGroup v-if="listType === 'picture-card' || listType === 'picture-circle'" tag="div" name="k-upload-card" class="k-upload__cards">
+        <div
+          v-for="f in list"
+          :key="f.uid"
+          class="k-upload__card"
+          :class="classNames?.item"
+          :style="styles?.item"
+          v-bind="itemAttrs(f)"
+          v-on="itemDragOn(f)"
+        >
+          <img
+            v-if="thumbOf(f)"
+            class="k-upload__card-img"
+            :src="thumbOf(f)"
+            :alt="f.name"
+            :style="styles?.thumb"
+            v-on="thumbOn(f)"
+          />
+          <span v-else class="k-upload__card-ext" :style="styles?.thumb">{{ extOf(f) }}</span>
+          <span
+            v-if="showActions || clickToUpload"
+            class="k-upload__card-overlay"
+            :class="classNames?.actions"
+            :style="styles?.actions"
+            v-on="overlayOn(f)"
+          >
+            <span v-if="showActions" role="button" class="k-upload__card-overlay-action" aria-label="预览" title="预览" v-on="previewOn(f)">
+              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8Z" /><circle cx="8" cy="8" r="1.8" /></svg>
+            </span>
+            <span v-if="showActions" role="button" class="k-upload__card-overlay-action" aria-label="删除" title="删除" v-on="removeOn(f)">
+              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4" /></svg>
+            </span>
+            <span v-if="clickToUpload" role="button" class="k-upload__card-overlay-action" aria-label="重新上传" title="重新上传" v-on="thumbOn(f)">
+              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M13 2.5V5h-2.5" /></svg>
+            </span>
+          </span>
+          <span v-if="f.status === 'uploading'" class="k-upload__card-mask">
+            <span>{{ f.percent ?? 0 }}%</span>
+          </span>
+          <span v-else-if="f.status === 'error'" class="k-upload__card-mask is-error" v-on="retryOn(f)">重试</span>
+        </div>
+        <div
+          v-if="canAdd"
+          key="__add"
+          v-bind="triggerAttrs"
+          class="k-upload__card-add"
+          :class="classNames?.trigger"
+          :style="styles?.trigger"
+          v-on="triggerOn"
+        >
+          <slot name="trigger" :open="openSelect" :disabled="disabled">
+            <span class="k-upload__card-plus" aria-hidden="true">+</span>
+            <span class="k-upload__card-hint">上传</span>
+          </slot>
+        </div>
+      </TransitionGroup>
+
+      <!-- 文本 / 图片列表：触发区 + 列表 -->
+      <template v-else>
+        <div
+          v-bind="triggerAttrs"
+          class="k-upload__trigger"
+          :class="[classNames?.trigger, { 'is-full': !canAdd }]"
+          :style="styles?.trigger"
+          v-on="triggerOn"
+        >
+          <slot name="trigger" :open="openSelect" :disabled="disabled">
+            <template v-if="drag">
+              <svg class="k-upload__cloud k-upload__cloud--lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M7 17a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.4 1.6A3.5 3.5 0 0 1 17.5 17" /><path d="M12 11v7M9.2 13.2 12 10.4l2.8 2.8" /></svg>
+              <span>点击或拖拽文件到此处上传</span>
+            </template>
+            <template v-else>
+              <svg class="k-upload__cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M12 16V5M8 8.5 12 4.5l4 4" /><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16" /></svg>
+              <span>上传文件</span>
+            </template>
+          </slot>
+        </div>
+
+        <TransitionGroup
+          tag="ul"
+          name="k-upload-item"
+          class="k-upload__list"
+          :class="classNames?.list"
+          :style="[styles?.list, { '--k-upload-shift': `${shiftPx}px` }]"
+          v-on="listDragOn"
+        >
+          <li
+            v-for="f in list"
+            :key="f.uid"
+            class="k-upload__item"
+            :class="classNames?.item"
+            :style="styles?.item"
+            v-bind="itemAttrs(f)"
+            v-on="itemDragOn(f)"
+          >
+            <template v-if="listType === 'picture'">
+              <img
+                v-if="thumbOf(f)"
+                class="k-upload__thumb"
+                :src="thumbOf(f)"
+                :alt="f.name"
+                :style="styles?.thumb"
+                v-on="thumbOn(f)"
+              />
+              <span v-else class="k-upload__thumb k-upload__thumb--ext" :style="styles?.thumb">{{ extOf(f) }}</span>
+            </template>
+            <div class="k-upload__meta">
+              <span
+                class="k-upload__name"
+                :class="classNames?.name"
+                :style="styles?.name"
+                v-on="previewOn(f)"
+              >{{ f.name }}</span>
+              <div v-if="f.status === 'uploading'" class="k-upload__progress" :class="classNames?.progress" :style="styles?.progress">
+                <i :style="{ width: `${f.percent ?? 0}%` }" />
+              </div>
+              <span v-else-if="f.status === 'error'" class="k-upload__fail">上传失败</span>
+            </div>
+            <span
+              v-if="clickToUpload"
+              class="k-upload__action k-upload__replace-action"
+              role="button"
+              aria-label="重新上传"
+              title="重新上传"
+              v-on="thumbOn(f)"
+            >
+              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M13 2.5V5h-2.5" /></svg>
+            </span>
+            <span class="k-upload__actions" :class="classNames?.actions" :style="styles?.actions">
+              <span
+                v-if="f.status === 'error'"
+                class="k-upload__action"
+                role="button"
+                aria-label="重试"
+                title="重试"
+                v-on="retryOn(f)"
+              >
+                <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M13 2.5V5h-2.5" /></svg>
+              </span>
+              <span
+                v-if="showActions"
+                class="k-upload__action"
+                role="button"
+                aria-label="删除"
+                title="删除"
+                v-on="removeOn(f)"
+              >
+                <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4" /></svg>
+              </span>
+            </span>
+          </li>
+        </TransitionGroup>
+      </template>
+
+      <input
+        ref="inputEl"
+        class="k-upload__input"
+        v-bind="inputAttrs"
+        v-on="inputOn"
+      />
+
+      <div v-if="drag && dragOver" class="k-upload__dragover">释放以上传</div>
+    </div>
+
+    <KModal
+      :open="cropOpen"
+      title="裁剪图片"
+      :width="560"
+      @update:open="onCropModalUpdate"
+    >
+      <KImageCropper
+        :file="cropCurrent"
+        :aspect-ratio="cropOptions?.aspectRatio"
+        :type="cropOptions?.type"
+        :quality="cropOptions?.quality"
+        @confirm="onCropConfirm"
+        @cancel="onCropCancel"
+      />
+    </KModal>
+    <KPreview v-model:open="previewOpen" v-model:current="previewIndex" :items="previewItems" />
+  </template>
+</template>
+
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useSlots } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
 import type { CSSProperties, Ref, VNodeChild } from 'vue';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn, KOnPack } from '../../composables/useCustomRender';
 import KPreview from '../Preview/Preview.vue';
+import KImageCropper from '../ImageCropper/ImageCropper.vue';
+import KModal from '../Modal/Modal.vue';
 
 defineOptions({ name: 'KUpload' });
 
 export type KUploadListType = 'text' | 'picture' | 'picture-card' | 'picture-circle';
 export type KUploadFileStatus = 'uploading' | 'done' | 'error';
+
+export interface KUploadCompressOptions {
+  maxWidth?: number;
+  maxHeight?: number;
+  /** 0~1，默认 0.85（PNG 会忽略质量参数，只靠尺寸压缩） */
+  quality?: number;
+  /** 输出 MIME；缺省沿用原图（PNG 保透明） */
+  type?: string;
+}
 export type KUploadChangeReason = 'add' | 'progress' | 'success' | 'error' | 'retry' | 'remove' | 'move' | 'replace';
 
 export interface KUploadFile {
@@ -35,13 +243,39 @@ export interface KUploadFileItem extends KUploadFile {
   status: KUploadFileStatus;
 }
 
+export interface KUploadChunkInfo {
+  index: number;
+  total: number;
+  start: number;
+  end: number;
+  size: number;
+}
+
 export interface KUploadRequestOptions {
   file: File;
   /** 中止信号：fetch 等可直连；删除/卸载时 abort */
   signal: AbortSignal;
+  /** 分片模式下当前分片信息；普通模式为 undefined */
+  chunk?: KUploadChunkInfo;
   onProgress: (percent: number) => void;
   onSuccess: (response?: unknown) => void;
   onError: (err?: unknown) => void;
+}
+
+export interface KUploadMergeOptions {
+  file: File;
+  signal: AbortSignal;
+  chunkCount: number;
+  /** 各分片 onSuccess 返回值的数组（按分片下标） */
+  responses: unknown[];
+}
+export type KUploadMerge = (options: KUploadMergeOptions) => unknown | Promise<unknown>;
+
+export interface KUploadCropOptions {
+  /** 固定宽高比；不传 = 自由裁剪 */
+  aspectRatio?: number;
+  type?: string;
+  quality?: number;
 }
 /** 可返回 { abort } 句柄、Promise（拒绝 = 失败，resolve false = 拒绝该文件）或直接 false */
 export type KUploadRequestResult = { abort?: () => void } | void | false | Promise<unknown>;
@@ -117,6 +351,22 @@ interface KUploadProps {
   disabled?: boolean;
   /** 根区域作为拖放目标（dashboard 高亮） */
   drag?: boolean;
+  /** 目录选择（webkitdirectory；强制多选，列表名显示相对路径） */
+  directory?: boolean;
+  /** 监听页面粘贴（Ctrl/Cmd+V 的文件/图片直接加入列表） */
+  paste?: boolean;
+  /** 并发上限：>0 时最多同时执行 N 个 upload，其余排队（0 / 不传 = 不限） */
+  concurrency?: number;
+  /** 图片前置压缩（canvas）：true = 1920px/0.85；非图片与 SVG/GIF 跳过 */
+  compress?: boolean | KUploadCompressOptions;
+  /** 分片大小（字节）：>0 且文件大于该值时按片调用 upload；0 = 关闭 */
+  chunkSize?: number;
+  /** 单文件内分片并发数（默认 3） */
+  chunkConcurrency?: number;
+  /** 全部分片成功后调用，返回值参与 mapResponse（无则不回传 url） */
+  merge?: KUploadMerge;
+  /** 选图后弹层裁剪再入列（true 或固定比例/编码参数；替换上传同样生效） */
+  crop?: boolean | KUploadCropOptions;
   /** 是否渲染 hover 操作栏（picture-card 的预览/删除、列表的删除；error 重试不受控） */
   showActions?: boolean;
   /** 点缩略图改为重新选择文件并原位替换（关闭则点图预览） */
@@ -137,6 +387,13 @@ const props = withDefaults(defineProps<KUploadProps>(), {
   listType: 'text',
   multiple: false,
   drag: false,
+  directory: false,
+  paste: false,
+  concurrency: 0,
+  compress: false,
+  chunkSize: 0,
+  chunkConcurrency: 3,
+  crop: false,
   showActions: true,
   clickToUpload: false,
 });
@@ -183,6 +440,22 @@ const previewOpen = ref(false);
 const previewIndex = ref(0);
 const replaceUid = ref<string | null>(null);
 
+interface CropTask {
+  file: File;
+  relative?: string;
+  replaceUid?: string;
+}
+const cropQueue: CropTask[] = [];
+const cropCurrent = ref<File | null>(null);
+const cropOpen = ref(false);
+const pendingCropCount = ref(0);
+let activeCropTask: CropTask | null = null;
+
+const cropOptions = computed(() => {
+  if (!props.crop) return null;
+  return props.crop === true ? {} : props.crop;
+});
+
 let uidSeed = 0;
 let dragDepth = 0;
 /** 最近一次 emit 的列表快照：同 tick 内 props 尚未回写，refuse/追加都以它为准 */
@@ -218,7 +491,9 @@ const list = computed<KUploadFileItem[]>(() =>
 );
 
 const canAdd = computed(
-  () => !props.disabled && (props.maxCount == null || list.value.length < props.maxCount),
+  () =>
+    !props.disabled &&
+    (props.maxCount == null || list.value.length + pendingCropCount.value < props.maxCount),
 );
 
 function setList(next: KUploadFileItem[], reason: KUploadChangeReason, file?: KUploadFileItem) {
@@ -290,7 +565,29 @@ function mapResponse(resp: unknown): Partial<KUploadFileItem> {
   return {};
 }
 
+const activeUids = new Set<string>();
+const uploadQueue: KUploadFileItem[] = [];
+
+function slotsFree(): boolean {
+  return props.concurrency <= 0 || activeUids.size < props.concurrency;
+}
+
+function pumpQueue() {
+  while (uploadQueue.length && slotsFree()) {
+    const next = uploadQueue.shift()!;
+    if (!list.value.some((f) => f.uid === next.uid)) continue;
+    startRequest(next);
+  }
+}
+
+function finishRequest(uid: string) {
+  activeUids.delete(uid);
+  pumpQueue();
+}
+
 function abortRequest(uid: string) {
+  const queued = uploadQueue.findIndex((f) => f.uid === uid);
+  if (queued >= 0) uploadQueue.splice(queued, 1);
   controllers.get(uid)?.abort();
   controllers.delete(uid);
   const handle = requests.get(uid);
@@ -300,16 +597,181 @@ function abortRequest(uid: string) {
     /* 业务 abort 失败不影响列表移除 */
   }
   requests.delete(uid);
+  if (activeUids.delete(uid)) pumpQueue();
 }
 
+/** 并发闸门：有空位直接执行，否则入队（返回 false 仅代表同步被 upload 拒绝） */
 function startRequest(file: KUploadFileItem): boolean {
+  if (!slotsFree()) {
+    uploadQueue.push(file);
+    return true;
+  }
+  return executeRequest(file);
+}
+
+async function runChunkedRequest(file: KUploadFileItem, controller: AbortController) {
+  const raw = file.raw as File;
+  const chunkSize = Math.max(1, props.chunkSize);
+  const total = Math.ceil(raw.size / chunkSize) || 1;
+  const sizes = Array.from({ length: total }, (_, i) =>
+    Math.min(chunkSize, raw.size - i * chunkSize),
+  );
+  const percents = new Array<number>(total).fill(0);
+  const responses: unknown[] = new Array(total);
+  const handles = new Map<number, { abort?: () => void }>();
+  let settled = false;
+
+  const loaded = () => sizes.reduce((sum, size, i) => sum + (size * percents[i]) / 100, 0);
+  const reportProgress = () => {
+    if (controller.signal.aborted) return;
+    const percent = Math.min(99, Math.floor((loaded() / Math.max(1, raw.size)) * 100));
+    updateItem(file.uid, { percent }, 'progress');
+  };
+
+  requests.set(file.uid, {
+    abort: () => {
+      for (const handle of handles.values()) handle.abort?.();
+    },
+  });
+
+  const cleanup = () => {
+    controllers.delete(file.uid);
+    requests.delete(file.uid);
+  };
+  const fail = (err: unknown) => {
+    if (settled || controller.signal.aborted) return;
+    settled = true;
+    cleanup();
+    const updated = updateItem(file.uid, { status: 'error' }, 'error');
+    finishRequest(file.uid);
+    if (updated) emit('error', updated, err);
+  };
+  const refuse = () => {
+    if (settled || controller.signal.aborted) return;
+    settled = true;
+    cleanup();
+    activeUids.delete(file.uid);
+    revokeObjectUrl(file.uid);
+    setList((lastEmitted ?? list.value).filter((f) => f.uid !== file.uid), 'remove', file);
+    if (file.raw) emit('reject', file.raw, 'upload');
+    pumpQueue();
+  };
+  const finish = async () => {
+    if (settled || controller.signal.aborted) return;
+    settled = true;
+    let response: unknown;
+    try {
+      response = props.merge
+        ? await props.merge({ file: raw, signal: controller.signal, chunkCount: total, responses })
+        : undefined;
+      if (response === false) {
+        settled = false;
+        refuse();
+        return;
+      }
+    } catch (err) {
+      settled = false;
+      fail(err);
+      return;
+    }
+    if (controller.signal.aborted) return;
+    cleanup();
+    const updated = updateItem(file.uid, { status: 'done', percent: 100, ...mapResponse(response) }, 'success');
+    finishRequest(file.uid);
+    if (updated) emit('success', updated);
+  };
+
+  const runChunk = (index: number) =>
+    new Promise<void>((resolve, reject) => {
+      const start = index * chunkSize;
+      const end = Math.min(raw.size, start + chunkSize);
+      const chunkFile = new File([raw.slice(start, end)], raw.name, {
+        type: raw.type,
+        lastModified: raw.lastModified,
+      });
+      const options: KUploadRequestOptions = {
+        file: chunkFile,
+        signal: controller.signal,
+        chunk: { index, total, start, end, size: end - start },
+        onProgress: (percent) => {
+          percents[index] = Math.min(100, Math.max(0, Math.round(percent)));
+          reportProgress();
+        },
+        onSuccess: (response) => {
+          percents[index] = 100;
+          responses[index] = response;
+          reportProgress();
+          resolve();
+        },
+        onError: (err) => reject(err),
+      };
+      try {
+        const ret = props.upload!(options);
+        if (ret === false) {
+          reject({ __refuse: true });
+          return;
+        }
+        if (ret && typeof (ret as Promise<unknown>).then === 'function') {
+          (ret as Promise<unknown>)
+            .then((handle) => {
+              if (handle === false) {
+                reject({ __refuse: true });
+                return;
+              }
+              if (handle && typeof (handle as { abort?: unknown }).abort === 'function') {
+                const h = handle as { abort?: () => void };
+                handles.set(index, h);
+                if (controller.signal.aborted) h.abort?.();
+              }
+            })
+            .catch(reject);
+        } else if (ret && typeof (ret as { abort?: unknown }).abort === 'function') {
+          const h = ret as { abort?: () => void };
+          handles.set(index, h);
+          if (controller.signal.aborted) h.abort?.();
+        }
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+  let next = 0;
+  let remaining = total;
+  const worker = async () => {
+    while (!settled && !controller.signal.aborted) {
+      const index = next++;
+      if (index >= total) return;
+      try {
+        await runChunk(index);
+        handles.delete(index);
+        remaining -= 1;
+        if (remaining === 0) void finish();
+      } catch (err) {
+        if (settled || controller.signal.aborted) return;
+        if ((err as { __refuse?: boolean })?.__refuse) refuse();
+        else fail(err);
+        controller.abort();
+        return;
+      }
+    }
+  };
+  const workerCount = Math.min(Math.max(1, props.chunkConcurrency), total);
+  void Promise.all(Array.from({ length: workerCount }, worker));
+}
+
+function executeRequest(file: KUploadFileItem): boolean {
   if (!props.upload) {
     console.warn('[KUpload] 需要传入 upload：组件自身不发请求');
     updateItem(file.uid, { status: 'error' }, 'error');
     return true;
   }
+  activeUids.add(file.uid);
   const controller = new AbortController();
   controllers.set(file.uid, controller);
+  if (props.chunkSize > 0 && file.raw && file.raw.size > props.chunkSize) {
+    void runChunkedRequest(file, controller);
+    return true;
+  }
   const ctx: KUploadRequestOptions = {
     file: file.raw as File,
     signal: controller.signal,
@@ -322,6 +784,7 @@ function startRequest(file: KUploadFileItem): boolean {
       const updated = updateItem(file.uid, { status: 'done', percent: 100, ...mapResponse(resp) }, 'success');
       controllers.delete(file.uid);
       requests.delete(file.uid);
+      finishRequest(file.uid);
       if (updated) emit('success', updated);
     },
     onError: (err) => {
@@ -329,12 +792,14 @@ function startRequest(file: KUploadFileItem): boolean {
       const updated = updateItem(file.uid, { status: 'error' }, 'error');
       controllers.delete(file.uid);
       requests.delete(file.uid);
+      finishRequest(file.uid);
       if (updated) emit('error', updated, err);
     },
   };
   /* upload 返回 false / Promise<false>：不上传、不占列表（同步 false 时与 add 同 tick 增删，无闪烁） */
   const refuse = () => {
     controllers.delete(file.uid);
+    activeUids.delete(file.uid);
     revokeObjectUrl(file.uid);
     setList(
       (lastEmitted ?? list.value).filter((f) => f.uid !== file.uid),
@@ -342,6 +807,7 @@ function startRequest(file: KUploadFileItem): boolean {
       file,
     );
     if (file.raw) emit('reject', file.raw, 'upload');
+    pumpQueue();
   };
   try {
     const ret = props.upload(ctx);
@@ -370,10 +836,56 @@ function startRequest(file: KUploadFileItem): boolean {
   return true;
 }
 
+function compressOptions(): Required<KUploadCompressOptions> | null {
+  if (!props.compress) return null;
+  if (props.compress === true) return { maxWidth: 1920, maxHeight: 1920, quality: 0.85, type: '' };
+  return {
+    maxWidth: props.compress.maxWidth ?? 1920,
+    maxHeight: props.compress.maxHeight ?? 1920,
+    quality: Math.min(1, Math.max(0.1, props.compress.quality ?? 0.85)),
+    type: props.compress.type ?? '',
+  };
+}
+
+/** 图片压缩失败/不符合条件时原样返回，不阻断上传 */
+async function compressFile(file: File): Promise<File> {
+  const opts = compressOptions();
+  if (!opts || typeof document === 'undefined') return file;
+  if (!/^image\//.test(file.type) || /svg|gif/i.test(file.type)) return file;
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, opts.maxWidth / bitmap.width, opts.maxHeight / bitmap.height);
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    if (scale === 1 && file.type === 'image/png') return file;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    const outType = opts.type || (file.type === 'image/png' ? 'image/png' : 'image/jpeg');
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, outType, opts.quality));
+    if (!blob || blob.size >= file.size) return file;
+    const out = new File([blob], file.name, { type: blob.type || outType, lastModified: file.lastModified });
+    const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+    if (relative) Object.defineProperty(out, 'webkitRelativePath', { value: relative });
+    return out;
+  } catch {
+    return file;
+  } finally {
+    bitmap?.close?.();
+  }
+}
+
 function createItem(file: File): KUploadFileItem {
+  const relative = props.directory
+    ? (file as File & { webkitRelativePath?: string }).webkitRelativePath
+    : '';
   return {
     uid: nextUid(),
-    name: file.name,
+    name: relative || file.name,
     status: 'uploading',
     percent: 0,
     size: file.size,
@@ -381,31 +893,85 @@ function createItem(file: File): KUploadFileItem {
   };
 }
 
+function shouldCrop(file: File): boolean {
+  return !!props.crop && /^image\//.test(file.type) && !/svg|gif/i.test(file.type);
+}
+
+async function acceptFile(raw: File) {
+  const file = await compressFile(raw);
+  if (props.maxSize != null && file.size > props.maxSize) {
+    emit('reject', file, 'size');
+    return;
+  }
+  const item = createItem(file);
+  setList([...list.value, item], 'add', item);
+  if (!startRequest(item)) {
+    // 同步拒绝：refuse 已回写列表；这里无需再动工作数组
+  }
+}
+
+function pumpCrop() {
+  if (activeCropTask || !cropQueue.length) return;
+  activeCropTask = cropQueue.shift()!;
+  cropCurrent.value = activeCropTask.file;
+  cropOpen.value = true;
+}
+
+function enqueueCrop(raw: File, replace?: string) {
+  cropQueue.push({
+    file: raw,
+    replaceUid: replace,
+    relative: (raw as File & { webkitRelativePath?: string }).webkitRelativePath,
+  });
+  pendingCropCount.value += 1;
+  pumpCrop();
+}
+
+async function onCropConfirm(file: File) {
+  const task = activeCropTask;
+  activeCropTask = null;
+  cropOpen.value = false;
+  cropCurrent.value = null;
+  pendingCropCount.value = Math.max(0, pendingCropCount.value - 1);
+  if (task?.relative) Object.defineProperty(file, 'webkitRelativePath', { value: task.relative });
+  if (task?.replaceUid) await replaceFile(task.replaceUid, file, true);
+  else await acceptFile(file);
+  pumpCrop();
+}
+
+function onCropCancel() {
+  activeCropTask = null;
+  cropOpen.value = false;
+  cropCurrent.value = null;
+  pendingCropCount.value = Math.max(0, pendingCropCount.value - 1);
+  pumpCrop();
+}
+
+function onCropModalUpdate(open: boolean) {
+  if (open) {
+    cropOpen.value = true;
+    return;
+  }
+  if (activeCropTask) onCropCancel();
+  else cropOpen.value = false;
+}
+
 async function addFiles(source: File[] | FileList | ArrayLike<File>) {
   if (props.disabled) return;
   const raws = Array.from(source ?? []).filter(Boolean) as File[];
   if (!raws.length) return;
 
-  const limited = props.multiple ? raws : raws.slice(0, 1);
-  const room = props.maxCount == null ? Infinity : Math.max(0, props.maxCount - list.value.length);
+  const limited = props.multiple || props.directory ? raws : raws.slice(0, 1);
+  const room =
+    props.maxCount == null
+      ? Infinity
+      : Math.max(0, props.maxCount - list.value.length - pendingCropCount.value);
   const accepted = limited.slice(0, room);
   for (const overflow of limited.slice(accepted.length)) emit('reject', overflow, 'maxCount');
 
-  // 同一 tick 内连续追加：list.value 是 computed，模型回写要等父级刷新才算数，
-  // 用工作数组累计，否则多次 setList 互相覆盖只剩最后一个
-  let working = [...list.value];
   for (const raw of accepted) {
-    if (props.maxSize != null && raw.size > props.maxSize) {
-      emit('reject', raw, 'size');
-      continue;
-    }
-    const item = createItem(raw);
-    working = [...working, item];
-    setList(working, 'add', item);
-    if (!startRequest(item)) {
-      // 同步拒绝：refuse 已回写列表，工作数组剔除该项防止后续 setList 写回
-      working = working.filter((f) => f.uid !== item.uid);
-    }
+    if (shouldCrop(raw)) enqueueCrop(raw);
+    else await acceptFile(raw);
   }
 }
 
@@ -488,25 +1054,30 @@ function openReplace(file: KUploadFileItem) {
   inputEl.value?.click();
 }
 
-async function replaceFile(uid: string, raw: File) {
+async function replaceFile(uid: string, raw: File, skipCrop = false) {
   if (props.disabled) return;
-  if (props.maxSize != null && raw.size > props.maxSize) {
-    emit('reject', raw, 'size');
+  if (!skipCrop && shouldCrop(raw)) {
+    enqueueCrop(raw, uid);
     return;
   }
   if (!props.upload) {
     console.warn('[KUpload] 需要传入 upload：组件自身不发请求');
     return;
   }
+  const file = await compressFile(raw);
+  if (props.maxSize != null && file.size > props.maxSize) {
+    emit('reject', file, 'size');
+    return;
+  }
   const index = list.value.findIndex((f) => f.uid === uid);
   if (index < 0) {
-    void addFiles([raw]);
+    await acceptFile(file);
     return;
   }
   // 复用 uid：保住列表位置与节点身份；旧请求/对象 URL 先回收
   abortRequest(uid);
   revokeObjectUrl(uid);
-  const item: KUploadFileItem = { uid, name: raw.name, status: 'uploading', percent: 0, size: raw.size, raw };
+  const item: KUploadFileItem = { uid, name: file.name, status: 'uploading', percent: 0, size: file.size, raw: file };
   const next = [...list.value];
   next[index] = item;
   setList(next, 'replace', item);
@@ -559,6 +1130,42 @@ function onDrop(e: DragEvent) {
   const raws = Array.from(e.dataTransfer?.files ?? []);
   if (raws.length) addFiles(raws);
 }
+
+/* ---------- 粘贴上传（document paste；只消费文件，不拦截纯文本） ---------- */
+function onDocumentPaste(e: ClipboardEvent) {
+  if (!props.paste || props.disabled) return;
+  const data = e.clipboardData;
+  if (!data) return;
+  const files = Array.from(data.files ?? []);
+  if (!files.length) {
+    for (const item of Array.from(data.items ?? [])) {
+      if (item.kind !== 'file') continue;
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  if (!files.length) return;
+  e.preventDefault();
+  void addFiles(files);
+}
+
+function bindPaste(enable: boolean) {
+  if (typeof document === 'undefined') return;
+  document.removeEventListener('paste', onDocumentPaste);
+  if (enable) document.addEventListener('paste', onDocumentPaste);
+}
+
+onMounted(() => bindPaste(props.paste));
+watch(
+  () => props.paste,
+  (enable) => bindPaste(enable),
+);
+onBeforeUnmount(() => bindPaste(false));
+
+watch(
+  () => props.concurrency,
+  () => pumpQueue(),
+);
 
 /* ---------- 列表排序（原生 HTML5 DnD；位置按行内中点或卡片横向中点判定） ---------- */
 function resetSortDrag() {
@@ -831,6 +1438,8 @@ function reorder(fromUid: string, toUid: string, position: 'before' | 'after') {
 }
 
 onBeforeUnmount(() => {
+  uploadQueue.length = 0;
+  activeUids.clear();
   for (const controller of controllers.values()) controller.abort();
   for (const handle of requests.values()) {
     try {
@@ -882,7 +1491,8 @@ const inputAttrs = computed(() => ({
   'data-part': 'input',
   type: 'file',
   accept: props.accept,
-  multiple: props.multiple || undefined,
+  multiple: props.multiple || props.directory || undefined,
+  webkitdirectory: props.directory || undefined,
   disabled: props.disabled || undefined,
 }));
 const inputOn: KOnPack = { change: onInputChange };
@@ -950,6 +1560,13 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KUplo
     maxSize: props.maxSize,
     disabled: props.disabled,
     drag: props.drag,
+    directory: props.directory,
+    paste: props.paste,
+    concurrency: props.concurrency,
+    compress: props.compress,
+    chunkSize: props.chunkSize,
+    chunkConcurrency: props.chunkConcurrency,
+    crop: props.crop,
     showActions: props.showActions,
     clickToUpload: props.clickToUpload,
     sortable: props.sortable,
@@ -993,188 +1610,6 @@ defineSlots<{
 
 defineExpose({ openSelect, addFiles, upload, remove, retry, abort, preview, reorder, inputEl });
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <template v-else>
-    <div
-      ref="rootEl"
-      v-bind="rootAttrs"
-      :class="[rootClasses, classNames?.root]"
-      :style="styles?.root"
-      v-on="rootOn"
-    >
-      <!-- 卡片墙（方/圆）：file tiles + 添加 tile -->
-      <TransitionGroup v-if="listType === 'picture-card' || listType === 'picture-circle'" tag="div" name="k-upload-card" class="k-upload__cards">
-        <div
-          v-for="f in list"
-          :key="f.uid"
-          class="k-upload__card"
-          :class="classNames?.item"
-          :style="styles?.item"
-          v-bind="itemAttrs(f)"
-          v-on="itemDragOn(f)"
-        >
-          <img
-            v-if="thumbOf(f)"
-            class="k-upload__card-img"
-            :src="thumbOf(f)"
-            :alt="f.name"
-            :style="styles?.thumb"
-            v-on="thumbOn(f)"
-          />
-          <span v-else class="k-upload__card-ext" :style="styles?.thumb">{{ extOf(f) }}</span>
-          <span
-            v-if="showActions || clickToUpload"
-            class="k-upload__card-overlay"
-            :class="classNames?.actions"
-            :style="styles?.actions"
-            v-on="overlayOn(f)"
-          >
-            <span v-if="showActions" role="button" class="k-upload__card-overlay-action" aria-label="预览" title="预览" v-on="previewOn(f)">
-              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8Z" /><circle cx="8" cy="8" r="1.8" /></svg>
-            </span>
-            <span v-if="showActions" role="button" class="k-upload__card-overlay-action" aria-label="删除" title="删除" v-on="removeOn(f)">
-              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4" /></svg>
-            </span>
-            <span v-if="clickToUpload" role="button" class="k-upload__card-overlay-action" aria-label="重新上传" title="重新上传" v-on="thumbOn(f)">
-              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M13 2.5V5h-2.5" /></svg>
-            </span>
-          </span>
-          <span v-if="f.status === 'uploading'" class="k-upload__card-mask">
-            <span>{{ f.percent ?? 0 }}%</span>
-          </span>
-          <span v-else-if="f.status === 'error'" class="k-upload__card-mask is-error" v-on="retryOn(f)">重试</span>
-        </div>
-        <div
-          v-if="canAdd"
-          key="__add"
-          v-bind="triggerAttrs"
-          class="k-upload__card-add"
-          :class="classNames?.trigger"
-          :style="styles?.trigger"
-          v-on="triggerOn"
-        >
-          <slot name="trigger" :open="openSelect" :disabled="disabled">
-            <span class="k-upload__card-plus" aria-hidden="true">+</span>
-            <span class="k-upload__card-hint">上传</span>
-          </slot>
-        </div>
-      </TransitionGroup>
-
-      <!-- 文本 / 图片列表：触发区 + 列表 -->
-      <template v-else>
-        <div
-          v-bind="triggerAttrs"
-          class="k-upload__trigger"
-          :class="[classNames?.trigger, { 'is-full': !canAdd }]"
-          :style="styles?.trigger"
-          v-on="triggerOn"
-        >
-          <slot name="trigger" :open="openSelect" :disabled="disabled">
-            <template v-if="drag">
-              <svg class="k-upload__cloud k-upload__cloud--lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M7 17a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.4 1.6A3.5 3.5 0 0 1 17.5 17" /><path d="M12 11v7M9.2 13.2 12 10.4l2.8 2.8" /></svg>
-              <span>点击或拖拽文件到此处上传</span>
-            </template>
-            <template v-else>
-              <svg class="k-upload__cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M12 16V5M8 8.5 12 4.5l4 4" /><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16" /></svg>
-              <span>上传文件</span>
-            </template>
-          </slot>
-        </div>
-
-        <TransitionGroup
-          tag="ul"
-          name="k-upload-item"
-          class="k-upload__list"
-          :class="classNames?.list"
-          :style="[styles?.list, { '--k-upload-shift': `${shiftPx}px` }]"
-          v-on="listDragOn"
-        >
-          <li
-            v-for="f in list"
-            :key="f.uid"
-            class="k-upload__item"
-            :class="classNames?.item"
-            :style="styles?.item"
-            v-bind="itemAttrs(f)"
-            v-on="itemDragOn(f)"
-          >
-            <template v-if="listType === 'picture'">
-              <img
-                v-if="thumbOf(f)"
-                class="k-upload__thumb"
-                :src="thumbOf(f)"
-                :alt="f.name"
-                :style="styles?.thumb"
-                v-on="thumbOn(f)"
-              />
-              <span v-else class="k-upload__thumb k-upload__thumb--ext" :style="styles?.thumb">{{ extOf(f) }}</span>
-            </template>
-            <div class="k-upload__meta">
-              <span
-                class="k-upload__name"
-                :class="classNames?.name"
-                :style="styles?.name"
-                v-on="previewOn(f)"
-              >{{ f.name }}</span>
-              <div v-if="f.status === 'uploading'" class="k-upload__progress" :class="classNames?.progress" :style="styles?.progress">
-                <i :style="{ width: `${f.percent ?? 0}%` }" />
-              </div>
-              <span v-else-if="f.status === 'error'" class="k-upload__fail">上传失败</span>
-            </div>
-            <span
-              v-if="clickToUpload"
-              class="k-upload__action k-upload__replace-action"
-              role="button"
-              aria-label="重新上传"
-              title="重新上传"
-              v-on="thumbOn(f)"
-            >
-              <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M13 2.5V5h-2.5" /></svg>
-            </span>
-            <span class="k-upload__actions" :class="classNames?.actions" :style="styles?.actions">
-              <span
-                v-if="f.status === 'error'"
-                class="k-upload__action"
-                role="button"
-                aria-label="重试"
-                title="重试"
-                v-on="retryOn(f)"
-              >
-                <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M13 2.5V5h-2.5" /></svg>
-              </span>
-              <span
-                v-if="showActions"
-                class="k-upload__action"
-                role="button"
-                aria-label="删除"
-                title="删除"
-                v-on="removeOn(f)"
-              >
-                <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4" /></svg>
-              </span>
-            </span>
-          </li>
-        </TransitionGroup>
-      </template>
-
-      <input
-        ref="inputEl"
-        class="k-upload__input"
-        v-bind="inputAttrs"
-        v-on="inputOn"
-      />
-
-      <div v-if="drag && dragOver" class="k-upload__dragover">释放以上传</div>
-    </div>
-
-    <KPreview v-model:open="previewOpen" v-model:current="previewIndex" :items="previewItems" />
-  </template>
-</template>
 
 <style>
 /* ---------- 部件变量 ---------- */

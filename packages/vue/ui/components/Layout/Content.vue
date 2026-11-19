@@ -1,3 +1,13 @@
+<template>
+  <template v-if="hasCustomRender">
+    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
+    <component v-else :is="renderPropOutlet" />
+  </template>
+  <main v-else data-part="root" :class="['k-layout-content', classNames?.root]" :style="styles?.root">
+    <slot />
+  </main>
+</template>
+
 <script setup lang="ts">
 import { useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
@@ -34,16 +44,6 @@ defineSlots<{
   render?(scope: KLayoutContentRenderScope): VNodeChild;
 }>();
 </script>
-
-<template>
-  <template v-if="hasCustomRender">
-    <slot v-if="$slots.render" name="render" v-bind="renderScope" />
-    <component v-else :is="renderPropOutlet" />
-  </template>
-  <main v-else data-part="root" :class="['k-layout-content', classNames?.root]" :style="styles?.root">
-    <slot />
-  </main>
-</template>
 
 <style>
 
