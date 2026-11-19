@@ -83,6 +83,7 @@ export { default as KStep } from "./components/Steps/Step.vue";
 export { default as KTabs } from "./components/Tabs/Tabs.vue";
 export { default as KTabPane } from "./components/Tabs/TabPane.vue";
 export { default as KDropdown } from "./components/Dropdown/Dropdown.vue";
+export { default as KMenu } from "./components/Menu/Menu.vue";
 export { default as KNotification } from "./components/Notification/Notification.vue";
 export { default as KDatePicker } from "./components/DatePicker/DatePicker.vue";
 export { default as KDateRangePicker } from "./components/DateRangePicker/DateRangePicker.vue";
@@ -169,6 +170,12 @@ export type {
   KDropdownPart,
   KDropdownTrigger,
 } from "./components/Dropdown/types";
+export type {
+  KMenuItem,
+  KMenuMode,
+  KMenuPart,
+  KMenuSubmenuTrigger,
+} from "./components/Menu/types";
 export type {
   KTableColumn,
   KTableFilterState,
