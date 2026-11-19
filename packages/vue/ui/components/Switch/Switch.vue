@@ -3,39 +3,52 @@
     <slot v-if="$slots.render" name="render" v-bind="renderScope" />
     <component v-else :is="renderPropOutlet" />
   </template>
-  <button
+  <label
     v-else
-    ref="rootEl"
-    class="k-switch"
+    class="k-switch-field"
     :class="[
-      `k-switch--${size}`,
-      { 'is-checked': checked, 'is-disabled': isDisabled, 'is-loading': loading },
-      classNames?.root,
+      hasLabel ? `is-${labelPosition}` : 'is-bare',
+      { 'is-disabled': hasLabel && isDisabled },
+      classNames?.field,
     ]"
-    :style="styles?.root"
-    v-bind="rootAttrs"
-    v-on="rootOn"
+    :style="styles?.field"
   >
-    <span class="k-switch__inner" aria-hidden="true">
-      <template v-if="checked">{{ checkedChildren }}</template>
-      <template v-else>{{ unCheckedChildren }}</template>
+    <span v-if="hasLabel" class="k-switch-field__label" :class="classNames?.label" :style="styles?.label">
+      <slot name="label">{{ label }}</slot>
     </span>
-    <span data-part="handle" class="k-switch__handle" :class="classNames?.handle" :style="styles?.handle">
-      <svg
-        v-if="loading"
-        class="k-switch__spinner"
-        viewBox="0 0 12 12"
-        width="0.72em"
-        height="0.72em"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.6"
-        aria-hidden="true"
-      >
-        <circle cx="6" cy="6" r="4.5" stroke-dasharray="18 8" />
-      </svg>
-    </span>
-  </button>
+  <button
+      ref="rootEl"
+      class="k-switch"
+      :class="[
+        `k-switch--${size}`,
+        { 'is-checked': checked, 'is-disabled': isDisabled, 'is-loading': loading },
+        classNames?.root,
+      ]"
+      :style="styles?.root"
+      v-bind="rootAttrs"
+      v-on="rootOn"
+    >
+      <span class="k-switch__inner" aria-hidden="true">
+        <template v-if="checked">{{ checkedChildren }}</template>
+        <template v-else>{{ unCheckedChildren }}</template>
+      </span>
+      <span data-part="handle" class="k-switch__handle" :class="classNames?.handle" :style="styles?.handle">
+        <svg
+          v-if="loading"
+          class="k-switch__spinner"
+          viewBox="0 0 12 12"
+          width="0.72em"
+          height="0.72em"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          aria-hidden="true"
+        >
+          <circle cx="6" cy="6" r="4.5" stroke-dasharray="18 8" />
+        </svg>
+      </span>
+    </button>
+  </label>
 </template>
 
 <script setup lang="ts">
@@ -47,8 +60,9 @@ import type { KRenderFn } from '../../composables/useCustomRender';
 
 defineOptions({ name: 'KSwitch' });
 
-type SwitchPart = 'root' | 'handle';
+type SwitchPart = 'root' | 'handle' | 'field' | 'label';
 type SwitchSize = 'large' | 'medium' | 'small';
+export type KSwitchLabelPosition = 'left' | 'right' | 'top' | 'bottom';
 
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
 export interface KSwitchRenderScope {
@@ -59,6 +73,10 @@ export interface KSwitchRenderScope {
   loading: boolean;
   checkedChildren: string | undefined;
   unCheckedChildren: string | undefined;
+  /** 外部文字标签与所在侧；自绘布局可据此摆放 */
+  label: string | undefined;
+  labelPosition: KSwitchLabelPosition;
+  hasLabel: boolean;
   id: string | undefined;
   name: string | undefined;
   rootEl: typeof rootEl;
@@ -81,6 +99,10 @@ interface KSwitchProps {
   /** 开/关态内嵌文字（antd checkedChildren/unCheckedChildren） */
   checkedChildren?: string;
   unCheckedChildren?: string;
+  /** 外部文字标签；也可用 #label 插槽 */
+  label?: string;
+  /** 文字相对开关的位置（文字在左 / 右 / 上 / 下） */
+  labelPosition?: KSwitchLabelPosition;
   id?: string;
   name?: string;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
@@ -93,6 +115,7 @@ const props = withDefaults(defineProps<KSwitchProps>(), {
   size: 'medium',
   disabled: false,
   loading: false,
+  labelPosition: 'left',
 });
 
 const emit = defineEmits<{ change: [checked: boolean] }>();
@@ -135,6 +158,9 @@ const rootAttrs = computed(() => ({
 const rootOn = { click: toggle, keydown: onKeydown };
 
 const slots = useSlots();
+const hasLabel = computed(
+  () => (props.label != null && props.label !== '') || Boolean(slots.label),
+);
 
 const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KSwitchRenderScope>(
   () => props.render,
@@ -145,6 +171,9 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KSwit
     loading: props.loading,
     checkedChildren: props.checkedChildren,
     unCheckedChildren: props.unCheckedChildren,
+    label: props.label,
+    labelPosition: props.labelPosition,
+    hasLabel: hasLabel.value,
     id: props.id,
     name: props.name,
     rootEl,
@@ -158,12 +187,45 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KSwit
 
 defineSlots<{
   render?(scope: KSwitchRenderScope): VNodeChild;
+  label?(): VNodeChild;
 }>();
 
 defineExpose({ focus });
 </script>
 
 <style>
+/* 开关 + 文字：无文字时 is-bare 用 display:contents，保持原根节点布局不受影响 */
+.k-switch-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--k-size-xs);
+  color: var(--k-color-text);
+  font-size: var(--k-font-size);
+  cursor: pointer;
+}
+.k-switch-field.is-bare {
+  display: contents;
+}
+.k-switch-field.is-top,
+.k-switch-field.is-bottom {
+  flex-direction: column;
+  gap: 4px;
+}
+.k-switch-field.is-right {
+  flex-direction: row-reverse;
+}
+.k-switch-field.is-bottom {
+  flex-direction: column-reverse;
+}
+.k-switch-field.is-disabled {
+  color: var(--k-color-text-quaternary);
+  cursor: not-allowed;
+}
+.k-switch-field__label {
+  white-space: nowrap;
+  user-select: none;
+}
+
 .k-switch {
   /* medium 52×26；large 68×30；small 38×20 */
   --k-switch-track-width: calc(var(--k-control-height-xs) * 1.75);

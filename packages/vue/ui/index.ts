@@ -102,7 +102,10 @@ export type { KIconRenderScope } from "./components/Icon/Icon.vue";
 export type { KButtonGroupRenderScope } from "./components/Button/ButtonGroup.vue";
 export type { KButtonRenderScope } from "./components/Button/Button.vue";
 export type { KLinkRenderScope } from "./components/Link/Link.vue";
-export type { KSwitchRenderScope } from "./components/Switch/Switch.vue";
+export type {
+  KSwitchRenderScope,
+  KSwitchLabelPosition,
+} from "./components/Switch/Switch.vue";
 export type { KCheckboxRenderScope } from "./components/Checkbox/Checkbox.vue";
 export type { KCheckboxGroupRenderScope } from "./components/Checkbox/CheckboxGroup.vue";
 export type { KRadioRenderScope } from "./components/Radio/Radio.vue";
