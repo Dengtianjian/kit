@@ -141,6 +141,8 @@ export type {
   KPreviewItem,
   KPreviewItemType,
   KPreviewRenderScope,
+  KPreviewRenderer,
+  KPreviewRendererContext,
 } from "./components/Preview/Preview.vue";
 export type { KRenderFn, KOnPack } from "./composables/useCustomRender";
 export { onProps } from "./composables/useCustomRender";
