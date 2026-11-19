@@ -71,6 +71,8 @@ export { default as KAlert } from "./components/Alert/Alert.vue";
 export { default as KSpin } from "./components/Spin/Spin.vue";
 export { default as KTag } from "./components/Tag/Tag.vue";
 export { default as KBadge } from "./components/Badge/Badge.vue";
+export { default as KCard } from "./components/Card/Card.vue";
+export { default as KCardAction } from "./components/Card/CardAction.vue";
 export { default as KEmpty } from "./components/Empty/Empty.vue";
 export { default as KPagination } from "./components/Pagination/Pagination.vue";
 export { default as KTable } from "./components/Table/Table.vue";
@@ -134,6 +136,7 @@ export type {
   KBadgePlacement,
   KBadgeRenderScope,
 } from "./components/Badge/Badge.vue";
+export type { KCardRenderScope, KCardVariant } from "./components/Card/Card.vue";
 export type {
   KTableColumn,
   KTableFilterState,
