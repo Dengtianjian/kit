@@ -88,6 +88,8 @@ export { default as KAffix } from "./components/Affix/Affix.vue";
 export { default as KBackTop } from "./components/BackTop/BackTop.vue";
 export { default as KAnchor } from "./components/Anchor/Anchor.vue";
 export { default as KDrawer } from "./components/Drawer/Drawer.vue";
+export { default as KNavBar } from "./components/NavBar/NavBar.vue";
+export { default as KTabBar } from "./components/TabBar/TabBar.vue";
 export { default as KNotification } from "./components/Notification/Notification.vue";
 export { default as KDatePicker } from "./components/DatePicker/DatePicker.vue";
 export { default as KDateRangePicker } from "./components/DateRangePicker/DateRangePicker.vue";
@@ -195,6 +197,8 @@ export type {
   KDrawerPlacement,
   KDrawerSize,
 } from "./components/Drawer/types";
+export type { KNavBarPart } from "./components/NavBar/types";
+export type { KTabBarItem, KTabBarPart } from "./components/TabBar/types";
 export type {
   KTableColumn,
   KTableFilterState,
