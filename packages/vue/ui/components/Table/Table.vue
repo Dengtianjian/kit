@@ -712,6 +712,7 @@ const internalSort = ref<KTableSortState | null>(null);
 let activeHoverKey: KTableRowKey | null = null;
 let pendingHoverKey: KTableRowKey | null = null;
 let hoverRaf = 0;
+let hoveredRows: HTMLElement[] = [];
 function scheduleHover(key: KTableRowKey | null) {
   pendingHoverKey = key;
   if (hoverRaf) return;
@@ -721,12 +722,16 @@ function scheduleHover(key: KTableRowKey | null) {
     activeHoverKey = pendingHoverKey;
     const wrap = wrapEl.value;
     if (!wrap) return;
-    wrap.querySelectorAll('.k-table__row.is-overlay-hover').forEach(row => {
-      row.classList.remove('is-overlay-hover');
-    });
+    /* 直接记住行元素，来回移动时只改这两行，不再全表扫描 */
+    hoveredRows.forEach(row => row.classList.remove('is-overlay-hover'));
+    hoveredRows = [];
     if (activeHoverKey != null) {
-      const selector = `.k-table__row[data-row-key="${CSS.escape(String(activeHoverKey))}"]`;
-      wrap.querySelectorAll(selector).forEach(row => row.classList.add('is-overlay-hover'));
+      hoveredRows = [
+        ...wrap.querySelectorAll<HTMLElement>(
+          `.k-table__row[data-row-key="${CSS.escape(String(activeHoverKey))}"]`,
+        ),
+      ];
+      hoveredRows.forEach(row => row.classList.add('is-overlay-hover'));
     }
   });
 }
@@ -992,6 +997,8 @@ const pinnedTopOffsets = ref<number[]>([]);
 const pinnedBottomOffsets = ref<number[]>([]);
 const scrollState = reactive({ left: false, right: false, top: false, bottom: false });
 let layoutResizeObserver: ResizeObserver | null = null;
+let layoutMeasureRaf = 0;
+let measuringLayout = false;
 let maxScrollLeft = 0;
 let maxScrollTop = 0;
 let syncScrollRaf = 0;
@@ -1107,21 +1114,35 @@ function syncScrollState() {
   scrollState.bottom = el.scrollTop < maxScrollTop - edge;
 }
 function measureLayout() {
-  measureHeaderRows();
-  measureColumnWidths();
-  quantizeColumnWidths();
-  measurePinnedRows();
-  syncFixedLayers();
-  measureVirtualRow();
-  tableHeight.value = tableEl.value?.getBoundingClientRect().height ?? 0;
-  const wrap = wrapEl.value;
-  if (wrap) {
-    maxScrollLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
-    maxScrollTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+  if (measuringLayout) return;
+  measuringLayout = true;
+  try {
+    measureHeaderRows();
+    measureColumnWidths();
+    quantizeColumnWidths();
+    measurePinnedRows();
+    syncFixedLayers();
+    measureVirtualRow();
+    tableHeight.value = tableEl.value?.getBoundingClientRect().height ?? 0;
+    const wrap = wrapEl.value;
+    if (wrap) {
+      maxScrollLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+      maxScrollTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+    }
+    scrollRange.value = maxScrollLeft;
+    updateVirtualWindow();
+    syncScrollState();
+  } finally {
+    measuringLayout = false;
   }
-  scrollRange.value = maxScrollLeft;
-  updateVirtualWindow();
-  syncScrollState();
+}
+/* 自身写行高会触发 ResizeObserver：合并到下一帧，并避免测量过程中重入 */
+function scheduleMeasureLayout() {
+  if (measuringLayout || layoutMeasureRaf) return;
+  layoutMeasureRaf = requestAnimationFrame(() => {
+    layoutMeasureRaf = 0;
+    measureLayout();
+  });
 }
 function onWrapScroll() {
   /* 滚动帧里不读 scrollWidth/scrollHeight（会强制排版），状态合并到每帧一次 */
@@ -1141,7 +1162,7 @@ onMounted(async () => {
       .map(row => rowKeyOf(row));
   }
   if (typeof ResizeObserver !== 'undefined') {
-    layoutResizeObserver = new ResizeObserver(measureLayout);
+    layoutResizeObserver = new ResizeObserver(scheduleMeasureLayout);
     for (const el of [headEl.value, tableEl.value, wrapEl.value]) {
       if (el) layoutResizeObserver.observe(el);
     }
@@ -1152,6 +1173,8 @@ onScopeDispose(() => {
   layoutResizeObserver = null;
   if (syncScrollRaf) cancelAnimationFrame(syncScrollRaf);
   syncScrollRaf = 0;
+  if (layoutMeasureRaf) cancelAnimationFrame(layoutMeasureRaf);
+  layoutMeasureRaf = 0;
   if (hoverRaf) cancelAnimationFrame(hoverRaf);
   hoverRaf = 0;
 });
@@ -1317,33 +1340,54 @@ function overlayHeaderCells(row: KTableHeaderCell<T>[], side: 'left' | 'right') 
 function syncFixedLayers() {
   const main = tableEl.value;
   if (!main || !overlayEnabled.value) return;
+  /* 先完成所有读，再统一写：左右浮层共用一次布局结果，避免两侧读写交错强制回流 */
+  const mainHeadHeights = [...main.querySelectorAll<HTMLElement>(':scope > thead > tr')].map(
+    row => row.getBoundingClientRect().height,
+  );
   const mainRows = [
     ...main.querySelectorAll<HTMLElement>(
       ':scope > tbody > tr:not(.k-table__virtual-spacer), :scope > tfoot > tr',
     ),
   ];
-  const mainHeadRows = [...main.querySelectorAll<HTMLElement>(':scope > thead > tr')];
-  const mainHeadHeights = mainHeadRows.map(row => row.getBoundingClientRect().height);
-  for (const side of fixedSides.value) {
-    const overlayTable = fixedLayerEls[side]?.querySelector('table');
-    if (!overlayTable) continue;
-    const headRows = [...overlayTable.querySelectorAll<HTMLElement>(':scope > thead > tr')];
-    headRows.forEach((row, index) => {
+  const rowHeights = mainRows.map(row => row.getBoundingClientRect().height);
+  const sides = fixedSides.value
+    .map(side => {
+      const overlayTable = fixedLayerEls[side]?.querySelector('table');
+      if (!overlayTable) return null;
+      const rows = [
+        ...overlayTable.querySelectorAll<HTMLElement>(
+          ':scope > tbody > tr:not(.k-table__virtual-spacer), :scope > tfoot > tr',
+        ),
+      ];
+      return {
+        headRows: [...overlayTable.querySelectorAll<HTMLElement>(':scope > thead > tr')],
+        rows,
+        heights: rows.map(row => row.getBoundingClientRect().height),
+      };
+    })
+    .filter((side): side is { headRows: HTMLElement[]; rows: HTMLElement[]; heights: number[] } =>
+      Boolean(side),
+    );
+  /* 行高取主表与所有浮层的最大值，一次写回全部表格 */
+  for (let index = 0; index < rowHeights.length; index++) {
+    let height = rowHeights[index];
+    for (const side of sides) {
+      const sideHeight = side.heights[index];
+      if (sideHeight != null && sideHeight > height) height = sideHeight;
+    }
+    rowHeights[index] = height;
+  }
+  mainRows.forEach((row, index) => {
+    row.style.height = `${rowHeights[index]}px`;
+  });
+  for (const side of sides) {
+    side.headRows.forEach((row, index) => {
       const height = mainHeadHeights[index];
       if (height != null) row.style.height = `${height}px`;
     });
-    const rows = [
-      ...overlayTable.querySelectorAll<HTMLElement>(
-        ':scope > tbody > tr:not(.k-table__virtual-spacer), :scope > tfoot > tr',
-      ),
-    ];
-    const count = Math.min(rows.length, mainRows.length);
-    const heights = mainRows.slice(0, count).map((row, index) =>
-      Math.max(row.getBoundingClientRect().height, rows[index].getBoundingClientRect().height),
-    );
+    const count = Math.min(side.rows.length, rowHeights.length);
     for (let index = 0; index < count; index++) {
-      mainRows[index].style.height = `${heights[index]}px`;
-      rows[index].style.height = `${heights[index]}px`;
+      side.rows[index].style.height = `${rowHeights[index]}px`;
     }
   }
 }
