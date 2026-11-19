@@ -175,7 +175,7 @@
 import { computed, h, inject, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, useId, useSlots, watch } from 'vue';
 import type { CSSProperties, Ref, VNode, VNodeChild } from 'vue';
 import { useKConfig } from '../../composables/useKConfig';
-import { usePopupFrame } from '../../composables/usePopup';
+import { useOverlayPosition } from '../../composables/usePopup';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn, KOnPack } from '../../composables/useCustomRender';
 import { FORM_ITEM_KEY } from '../Form/context';
@@ -325,7 +325,6 @@ const popupEl = ref<HTMLElement | null>(null);
 const open = ref(false);
 const activeIndex = ref(-1);
 const pattern = ref('');
-const flipped = ref(false);
 const createdOptions = ref<KSelectOption[]>([]);
 const fitCount = ref(Number.POSITIVE_INFINITY);
 
@@ -407,49 +406,36 @@ const teleportTarget = computed(() => {
   // typeof 判别而非 instanceof HTMLElement（SSR 无该全局）
   return (typeof c === 'function' ? c() : c) ?? 'body';
 });
-const frame = usePopupFrame(teleportTarget);
-const popupStyle = ref<CSSProperties>({ position: 'fixed', visibility: 'hidden' });
+/* 定位并入共用基座：翻转/视口 clamp/容器 absolute/scroll-resize/高度变化重定位统一 */
+const { popupStyle: overlayStyle, actualPlacement } = useOverlayPosition({
+  anchor: controlEl,
+  popup: popupEl,
+  visible: open,
+  placement: () => 'bottomLeft',
+  target: teleportTarget,
+  gap: 4,
+});
+const flipped = computed(() => actualPlacement.value.startsWith('top'));
 // 宽度贴触发器是默认视觉语义，独立于定位包：headless 自绘弹层可自选是否绑定
 const popupWidth = ref('');
-const GAP = 4; // 触发器与弹层间距，与 --k-size-xxs 同步的布局常数（DOM 定位用数值 px）
 const HEIGHT_VAR: Record<string, string> = {
   xs: 'var(--k-control-height-xs)',
   sm: 'var(--k-control-height-sm)',
   md: 'var(--k-control-height)',
   lg: 'var(--k-control-height-lg)',
 };
-
-function place() {
-  const anchor = controlEl.value?.getBoundingClientRect();
-  const popup = popupEl.value;
-  if (!anchor || !popup) return;
-  const vh = window.innerHeight;
-  const h = popup.offsetHeight;
-  let top = anchor.bottom + GAP;
-  flipped.value = false;
-  if (anchor.bottom + GAP + h > vh && anchor.top - GAP - h > 0) {
-    top = anchor.top - GAP - h; // 上翻
-    flipped.value = true;
-  }
-  frame.ensurePositioned();
-  const point = frame.localPoint(top, anchor.left);
-  popupWidth.value = `${Math.round(anchor.width)}px`;
-  popupStyle.value = {
-    position: frame.mode.value,
-    top: `${Math.round(point.top)}px`,
-    left: `${Math.round(point.left)}px`,
-    visibility: 'visible',
-    // Teleport 出口脱离根节点作用域：尺寸变量随弹层走，选项行高 = 触发器 − 4
-    '--k-select-height': HEIGHT_VAR[props.size],
-    '--k-select-option-font-size':
-      props.size === 'xs' || props.size === 'sm'
-        ? 'var(--k-font-size-sm)'
-        : 'var(--k-input-font-size)',
-  } as CSSProperties;
-}
-
-function onScrollResize() {
-  if (open.value) place();
+const popupStyle = computed<CSSProperties>(() => ({
+  ...overlayStyle.value,
+  // Teleport 出口脱离根节点作用域：尺寸变量随弹层走，选项行高 = 触发器 − 4
+  '--k-select-height': HEIGHT_VAR[props.size],
+  '--k-select-option-font-size':
+    props.size === 'xs' || props.size === 'sm'
+      ? 'var(--k-font-size-sm)'
+      : 'var(--k-input-font-size)',
+}));
+function syncWidth() {
+  const w = controlEl.value?.offsetWidth;
+  if (w) popupWidth.value = `${Math.round(w)}px`;
 }
 function onDocPointerdown(e: PointerEvent) {
   if (!open.value) return;
@@ -462,25 +448,21 @@ watch(open, async (v) => {
   if (v) {
     const i = menuOptions.value.findIndex((o) => selectedValues.value.includes(o.value));
     activeIndex.value = i >= 0 ? i : firstEnabledIndex();
+    syncWidth(); // 先落宽度，基座 nextTick 测量时已是最新尺寸
+    window.addEventListener('resize', syncWidth);
     document.addEventListener('pointerdown', onDocPointerdown, true);
-    // absolute 模式弹层随容器内容滚，不挂 scroll 跟随；resize 两模式都跟（翻转依赖视口）
-    if (frame.mode.value === 'fixed') window.addEventListener('scroll', onScrollResize, true);
-    window.addEventListener('resize', onScrollResize);
     await nextTick();
-    place();
     if (props.filterable) inputEl.value?.focus();
     measureTags();
   } else {
     document.removeEventListener('pointerdown', onDocPointerdown, true);
-    window.removeEventListener('scroll', onScrollResize, true);
-    window.removeEventListener('resize', onScrollResize);
+    window.removeEventListener('resize', syncWidth);
     pattern.value = '';
   }
 });
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocPointerdown, true);
-  window.removeEventListener('scroll', onScrollResize, true);
-  window.removeEventListener('resize', onScrollResize);
+  window.removeEventListener('resize', syncWidth);
   tagObserver?.disconnect();
 });
 

@@ -5,12 +5,21 @@
         v-for="it in svc.items.value"
         :key="it.id"
         class="k-message"
-        :class="`k-message--${it.type}`"
+        :class="[`k-message--${it.type}`, it.classNames?.root]"
+        :style="it.styles?.root"
         data-part="item"
         :role="it.type === 'error' ? 'alert' : 'status'"
         aria-atomic="true"
       >
-        <span v-if="it.icon !== null" class="k-message__icon" aria-hidden="true">
+        <MessageCustom v-if="it.render" :item="it" :close="() => svc.remove(it)" />
+        <template v-else>
+        <span
+          v-if="it.icon !== null"
+          class="k-message__icon"
+          :class="it.classNames?.icon"
+          :style="it.styles?.icon"
+          aria-hidden="true"
+        >
           <svg v-if="it.type === 'loading'" class="k-message__spin" viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
             <circle cx="8" cy="8" r="6.2" stroke-dasharray="26 13" />
           </svg>
@@ -21,17 +30,22 @@
             <path :d="ICON_PATH[it.type]" />
           </svg>
         </span>
-        <span class="k-message__content"><component :is="KNode" :node="it.content" /></span>
+        <span
+          class="k-message__content"
+          :class="it.classNames?.content"
+          :style="it.styles?.content"
+        ><component :is="KNode" :node="it.content" /></span>
+        </template>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue';
+import { defineComponent, onBeforeUnmount, watch } from 'vue';
 import { KNode } from '../../utils/vnode';
 import { usePopupHost } from '../../composables/usePopup';
-import type { KMessageService } from './service';
+import type { KMessageHolderItem, KMessageService } from './service';
 
 defineOptions({ name: 'KMessageHolder' });
 
@@ -40,6 +54,23 @@ const props = defineProps<{ svc: KMessageService }>();
 
 /* 出口在 body：scopeClass/scheme 随节点走，否则 scoped Provider 下 token 断链（契约④） */
 const { popupClasses, popupTheme } = usePopupHost(() => ['k-message-list']);
+
+/** 自定义内容渲染：只替换图标+正文，外层 k-message（role/计时）仍由 Holder 提供 */
+const MessageCustom = defineComponent({
+  props: {
+    item: { type: Object as () => KMessageHolderItem, required: true },
+    close: { type: Function as () => () => void, required: true },
+  },
+  setup(p) {
+    return () =>
+      p.item.render?.({
+        content: p.item.content,
+        type: p.item.type,
+        icon: p.item.icon,
+        close: p.close,
+      });
+  },
+});
 
 const CIRCLE = 'M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Z';
 const ICON_PATH: Record<string, string> = {

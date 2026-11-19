@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import type { VNode } from 'vue';
+import type { CSSProperties, VNode, VNodeChild } from 'vue';
 
 /**
  * message 实例 API（挂 useKApp().message，无全局静态）。
@@ -7,6 +7,16 @@ import type { VNode } from 'vue';
  */
 
 export type KMessageType = 'info' | 'success' | 'error' | 'warning' | 'loading';
+
+export type KMessagePart = 'root' | 'icon' | 'content';
+
+export interface KMessageRenderScope {
+  content: string | VNode;
+  type: KMessageType;
+  icon?: string | VNode | null;
+  /** 手动关闭当前这条（仍走 onClose/计时清理） */
+  close: () => void;
+}
 
 export interface KMessageConfig {
   content: string | VNode;
@@ -17,6 +27,10 @@ export interface KMessageConfig {
   icon?: string | VNode | null;
   /** 同 key 复用一条（更新内容而非叠加） */
   key?: string;
+  /** 自定义消息内容渲染（保留外层 role/计时/队列） */
+  render?: (scope: KMessageRenderScope) => VNodeChild;
+  classNames?: Partial<Record<KMessagePart, string>>;
+  styles?: Partial<Record<KMessagePart, CSSProperties>>;
   onClose?: () => void;
 }
 
@@ -42,6 +56,9 @@ export interface KMessageHolderItem {
   content: string | VNode;
   icon?: string | VNode | null;
   duration: number;
+  render?: (scope: KMessageRenderScope) => VNodeChild;
+  classNames?: Partial<Record<KMessagePart, string>>;
+  styles?: Partial<Record<KMessagePart, CSSProperties>>;
   onClose?: () => void;
 }
 
@@ -80,6 +97,9 @@ export function createMessageService(): KMessageService {
       content: config.content,
       icon: config.icon,
       duration: config.duration ?? 3,
+      render: config.render,
+      classNames: config.classNames,
+      styles: config.styles,
       onClose: config.onClose,
     };
     if (config.key) {
