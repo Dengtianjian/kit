@@ -7,6 +7,14 @@ import type { InjectionKey, Ref } from 'vue';
  */
 export interface FormItemContext {
   status: Ref<'error' | 'warning' | undefined>;
+  /** 自动生成的控件 id：label for 与控件 id 共用 */
+  controlId: string;
+  /** 错误/提示文案节点 id（存在 help 时） */
+  helpId: string;
+  /** 是否有 help 文案：有则控件 aria-describedby 指向 helpId */
+  describedBy: Ref<string | undefined>;
+  /** 当前是否错误：控件 aria-invalid */
+  invalid: Ref<boolean>;
   onFieldBlur: () => void;
   onFieldChange: () => void;
 }

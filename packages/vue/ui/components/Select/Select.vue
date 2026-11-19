@@ -172,7 +172,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, inject, nextTick, onBeforeUnmount, onMounted, ref, useId, useSlots, watch } from 'vue';
+import { computed, h, inject, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, useId, useSlots, watch } from 'vue';
 import type { CSSProperties, Ref, VNode, VNodeChild } from 'vue';
 import { useKConfig } from '../../composables/useKConfig';
 import { usePopupFrame } from '../../composables/usePopup';
@@ -181,7 +181,7 @@ import type { KRenderFn, KOnPack } from '../../composables/useCustomRender';
 import { FORM_ITEM_KEY } from '../Form/context';
 import KTooltip from '../Tooltip/Tooltip.vue';
 
-defineOptions({ name: 'KSelect' });
+defineOptions({ name: 'KSelect', inheritAttrs: false });
 
 export interface KSelectOption {
   label: string;
@@ -705,21 +705,25 @@ const comboboxAttrs = computed(() => ({
   'aria-activedescendant':
     open.value && activeIndex.value >= 0 ? optionId(activeIndex.value) : undefined,
   'aria-disabled': props.disabled || undefined,
+  'aria-invalid': formItem?.invalid.value || undefined,
+  'aria-describedby': formItem?.describedBy.value,
 }));
+const controlId = props.id ?? formItem?.controlId;
 const controlAttrs = computed(() =>
   props.filterable
     ? { ...comboboxAttrs.value, tabindex: -1 }
-    : { ...comboboxAttrs.value, tabindex: 0, id: props.id },
+    : { ...comboboxAttrs.value, tabindex: 0, id: controlId },
 );
 const inputAttrs = computed(() => ({
   ...comboboxAttrs.value,
-  id: props.id,
+  id: controlId,
   'aria-autocomplete': 'list',
 }));
 
 /* ---------- headless 绑定包：事件/语义 attrs 收进 script，默认模板与自绘共用 ---------- */
 const slots = useSlots();
-const rootAttrs = { 'data-part': 'root' };
+const attrs = useAttrs();
+const rootAttrs = computed(() => ({ 'data-part': 'root', ...attrs }));
 const rootOn: KOnPack = {
   keydown: (e) => onKeydown(e as KeyboardEvent),
   focusout: (e) => onFocusout(e as FocusEvent),
@@ -815,7 +819,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KSele
     teleportTarget: teleportTarget.value,
     popupStyle: popupStyle.value,
     popupWidth: popupWidth.value,
-    rootAttrs,
+    rootAttrs: rootAttrs.value,
     rootOn,
     controlAttrs: controlAttrs.value,
     controlOn,

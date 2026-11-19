@@ -47,10 +47,11 @@ import type { KRenderFn } from '../../composables/useCustomRender';
 defineOptions({ name: 'KSwitch' });
 
 type SwitchPart = 'root' | 'handle';
+type SwitchSize = 'large' | 'medium' | 'small';
 
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
 export interface KSwitchRenderScope {
-  size: 'default' | 'small';
+  size: SwitchSize;
   checked: boolean;
   /** disabled || loading 合成后的不可交互态 */
   disabled: boolean;
@@ -71,8 +72,8 @@ export interface KSwitchRenderScope {
 }
 
 interface KSwitchProps {
-  /** antd size 语义：default | small（无四轴 type/variant，开关只有开合） */
-  size?: 'default' | 'small';
+  /** 轨道尺寸：large（68×30）/ medium（52×26）/ small（38×20）；无四轴 type/variant，开关只有开合 */
+  size?: SwitchSize;
   disabled?: boolean;
   /** 加载中：不可交互 + 把手位显 spinner（反馈批前内建最小 spinner，同 KInput 图标路数） */
   loading?: boolean;
@@ -88,7 +89,7 @@ interface KSwitchProps {
 }
 
 const props = withDefaults(defineProps<KSwitchProps>(), {
-  size: 'default',
+  size: 'medium',
   disabled: false,
   loading: false,
 });
@@ -160,10 +161,13 @@ defineExpose({ focus });
 
 <style>
 .k-switch {
-  --k-switch-track-width: calc(var(--k-control-height-xs) * 2);
-  --k-switch-track-width-sm: calc(var(--k-control-height-xs) * 1.5);
-  --k-switch-track-height: var(--k-control-height-xs);
-  --k-switch-track-height-sm: calc(var(--k-control-height-xs) - 4px);
+  /* medium 52×26；large 68×30；small 38×20 */
+  --k-switch-track-width: calc(var(--k-control-height-xs) * 1.75);
+  --k-switch-track-height: calc(var(--k-control-height-xs) - 4px);
+  --k-switch-track-width-lg: calc(var(--k-control-height-xs) * 2 + 8px);
+  --k-switch-track-height-lg: var(--k-control-height-xs);
+  --k-switch-track-width-sm: calc(var(--k-control-height-xs) + 8px);
+  --k-switch-track-height-sm: calc(var(--k-control-height-xs) - 10px);
   --k-switch-on-bg: var(--k-color-primary);
   --k-switch-off-bg: var(--k-color-text-quaternary);
   --k-switch-disabled-on-bg: color-mix(in oklab, var(--k-color-primary) 50%, var(--k-mix-onto));
@@ -186,6 +190,10 @@ defineExpose({ focus });
   cursor: pointer;
   font-family: inherit;
   transition: background-color var(--k-motion-duration-mid) var(--k-motion-ease-in-out-cubic);
+}
+.k-switch--large {
+  width: var(--k-switch-track-width-lg);
+  height: var(--k-switch-track-height-lg);
 }
 .k-switch--small {
   width: var(--k-switch-track-width-sm);
@@ -220,10 +228,19 @@ defineExpose({ focus });
   align-items: center;
   justify-content: center;
   box-shadow: var(--k-box-shadow-tertiary);
-  transition: left var(--k-motion-duration-mid) var(--k-motion-ease-in-out-cubic);
+  transition:
+    left var(--k-motion-duration-mid) var(--k-motion-ease-in-out-cubic),
+    width var(--k-motion-duration-mid) var(--k-motion-ease-in-out-cubic);
 }
 .k-switch.is-checked .k-switch__handle {
   left: calc(var(--k-switch-track-width) - (var(--k-switch-track-height) - 4px) - 2px);
+}
+.k-switch--large .k-switch__handle {
+  width: calc(var(--k-switch-track-height-lg) - 4px);
+  height: calc(var(--k-switch-track-height-lg) - 4px);
+}
+.k-switch--large.is-checked .k-switch__handle {
+  left: calc(var(--k-switch-track-width-lg) - (var(--k-switch-track-height-lg) - 4px) - 2px);
 }
 .k-switch--small .k-switch__handle {
   width: calc(var(--k-switch-track-height-sm) - 4px);
@@ -233,19 +250,55 @@ defineExpose({ focus });
   left: calc(var(--k-switch-track-width-sm) - (var(--k-switch-track-height-sm) - 4px) - 2px);
 }
 
+/* 按压拉长：把手向对侧伸长 4px，贴住的那条边保持不动 */
+.k-switch:not(.is-disabled):active .k-switch__handle {
+  width: var(--k-switch-track-height);
+}
+.k-switch.is-checked:not(.is-disabled):active .k-switch__handle {
+  left: calc(var(--k-switch-track-width) - var(--k-switch-track-height) - 2px);
+}
+.k-switch--large:not(.is-disabled):active .k-switch__handle {
+  width: var(--k-switch-track-height-lg);
+}
+.k-switch--large.is-checked:not(.is-disabled):active .k-switch__handle {
+  left: calc(var(--k-switch-track-width-lg) - var(--k-switch-track-height-lg) - 2px);
+}
+.k-switch--small:not(.is-disabled):active .k-switch__handle {
+  width: var(--k-switch-track-height-sm);
+}
+.k-switch--small.is-checked:not(.is-disabled):active .k-switch__handle {
+  left: calc(var(--k-switch-track-width-sm) - var(--k-switch-track-height-sm) - 2px);
+}
+
 .k-switch__inner {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
-  padding: 0 calc(var(--k-size-xxs) + 2px);
+  /* 文字居中于「边框 ↔ 把手」之间的剩余区域 */
+  padding: 0 2px;
   color: var(--k-switch-text-color);
   font-size: var(--k-font-size-sm);
   white-space: nowrap;
-  justify-content: flex-start;
+  justify-content: center;
+}
+.k-switch.is-checked .k-switch__inner {
+  padding-inline-end: var(--k-switch-track-height);
 }
 .k-switch:not(.is-checked) .k-switch__inner {
-  justify-content: flex-end;
+  padding-inline-start: var(--k-switch-track-height);
+}
+.k-switch--large.is-checked .k-switch__inner {
+  padding-inline-end: var(--k-switch-track-height-lg);
+}
+.k-switch--large:not(.is-checked) .k-switch__inner {
+  padding-inline-start: var(--k-switch-track-height-lg);
+}
+.k-switch--small.is-checked .k-switch__inner {
+  padding-inline-end: var(--k-switch-track-height-sm);
+}
+.k-switch--small:not(.is-checked) .k-switch__inner {
+  padding-inline-start: var(--k-switch-track-height-sm);
 }
 
 .k-switch__spinner {

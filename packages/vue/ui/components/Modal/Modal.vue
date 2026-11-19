@@ -42,7 +42,7 @@
             :style="styles?.header"
             v-on="headerOn"
           >
-            <div data-part="title" class="k-modal__title" :class="classNames?.title" :style="styles?.title">
+            <div :id="titleId" data-part="title" class="k-modal__title" :class="classNames?.title" :style="styles?.title">
               <span v-if="icon" class="k-modal__icon" aria-hidden="true"><component :is="KNode" :node="icon" /></span>
               <component v-if="title" :is="KNode" :node="title" />
               <slot v-else name="title" />
@@ -81,6 +81,39 @@
 /* 滚动锁模块计数：多模态叠层只由最后一个释放（普通 script 块 = 模块作用域） */
 import { installPointerRecorder } from '../../utils/interaction';
 installPointerRecorder(); // 模块装载即挂 capture 记录器，早于任何首次点击（SSR 内部有守卫）
+/* 打开中的弹窗栈：叠层时只让最上层接管 Tab 循环与 Esc */
+const modalStack: HTMLElement[] = [];
+function pushModal(el: HTMLElement) {
+  removeModal(el);
+  modalStack.push(el);
+}
+function removeModal(el: HTMLElement) {
+  const i = modalStack.indexOf(el);
+  if (i >= 0) modalStack.splice(i, 1);
+}
+function isTopModal(el: HTMLElement | null) {
+  return !!el && modalStack[modalStack.length - 1] === el;
+}
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'area[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'iframe',
+  'object',
+  'embed',
+  '[contenteditable="true"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+function getFocusable(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
+    (el) => el.getAttribute('aria-hidden') !== 'true' && el.getClientRects().length > 0,
+  );
+}
+
 let bodyLockCount = 0;
 function lockBody() {
   if (bodyLockCount++ === 0 && typeof document !== 'undefined') {
@@ -96,7 +129,7 @@ function unlockBody() {
 </script>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue';
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, useId, useSlots, watch } from 'vue';
 import type { CSSProperties, Ref, VNode, VNodeChild } from 'vue';
 import { KNode } from '../../utils/vnode';
 import { useKApp } from '../../composables/useKApp';
@@ -130,6 +163,8 @@ export interface KModalRenderScope {
   zoomed: boolean;
   teleportTarget: HTMLElement | string;
   dialogEl: Ref<HTMLElement | null>;
+  /** 标题节点 id：dialogAttrs 的 aria-labelledby 指向它，自绘标题节点需绑定 */
+  titleId: string;
   rootAttrs: Record<string, unknown>;
   maskAttrs: Record<string, unknown>;
   wrapAttrs: Record<string, unknown>;
@@ -183,6 +218,9 @@ const props = withDefaults(defineProps<KModalProps>(), {
   closable: true,
   draggable: false,
 });
+
+const slots = useSlots();
+const titleId = `k-modal-title-${useId()}`;
 
 const emit = defineEmits<{
   'update:open': [open: boolean];
@@ -283,8 +321,51 @@ function onMaskClick() {
 function onWrapClick(e: MouseEvent) {
   if (e.target === e.currentTarget) onMaskClick();
 }
+let restoreFocus: HTMLElement | null = null;
+
+function focusInitial(dialog: HTMLElement) {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== dialog && dialog.contains(active)) return; // 内容自身已聚焦（autofocus）
+  const auto = dialog.querySelector<HTMLElement>('[autofocus], [data-autofocus]');
+  // 优先正文控件，其次 footer；都没有才聚焦 dialog（避免默认落到右上关闭钮）
+  const body = dialog.querySelector<HTMLElement>('[data-part="body"]');
+  const footer = dialog.querySelector<HTMLElement>('[data-part="footer"]');
+  const target = auto ?? (body && getFocusable(body)[0]) ?? (footer && getFocusable(footer)[0]) ?? dialog;
+  target.focus();
+}
+function trapTab(e: KeyboardEvent) {
+  const dialog = dialogEl.value;
+  if (!dialog) return;
+  const items = getFocusable(dialog);
+  if (!items.length) {
+    e.preventDefault();
+    dialog.focus();
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || active === dialog || !dialog.contains(active)) {
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
+    return;
+  }
+  if (e.shiftKey && active === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
 function onKeydown(e: KeyboardEvent) {
-  if (props.keyboard && e.key === 'Escape') requestClose(e);
+  if (!isTopModal(dialogEl.value)) return; // 叠层时只由最上层接管
+  if (e.key === 'Escape' && props.keyboard) {
+    e.stopPropagation();
+    requestClose(e);
+    return;
+  }
+  if (e.key === 'Tab') trapTab(e);
 }
 
 /* 打开时滚动锁定（模块计数，见顶部 script 块） */
@@ -296,16 +377,23 @@ watch(
     if (v) {
       lockBody();
       document.addEventListener('keydown', onKeydown);
+      restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       zoomed.value = false; // 退场中途重开也重起 zoom：先落回隐藏门再放行
       dragX.value = 0; // 重开回位：拖拽位移不跨开合保留
       dragY.value = 0;
       await nextTick();
       applyOrigin();
       zoomed.value = true;
-      dialogEl.value?.focus();
+      await nextTick(); // 等 is-zoomed 类落到 DOM（visibility:hidden 时 focus 无效）
+      const dialog = dialogEl.value;
+      if (dialog) {
+        pushModal(dialog);
+        focusInitial(dialog);
+      }
     } else {
       unlockBody();
       document.removeEventListener('keydown', onKeydown);
+      if (dialogEl.value) removeModal(dialogEl.value);
       // zoomed/zoomOrigin 留到 after-leave 复位：退场动画期间 dialog 仍需可见
     }
   },
@@ -314,17 +402,22 @@ watch(
 function onAfterLeave() {
   zoomed.value = false;
   zoomOrigin.value = {};
+  // 退场结束后还原焦点到打开前的元素（已卸载则跳过）
+  if (!openState.value && restoreFocus) {
+    if (restoreFocus.isConnected) restoreFocus.focus({ preventScroll: true });
+    restoreFocus = null;
+  }
   emit('afterClose');
 }
 onBeforeUnmount(() => {
-  if (openState.value && typeof document !== 'undefined') {
-    unlockBody();
+  if (typeof document !== 'undefined') {
     document.removeEventListener('keydown', onKeydown);
+    if (dialogEl.value) removeModal(dialogEl.value);
+    if (openState.value) unlockBody();
   }
 });
 
 /* ---------- headless 绑定包：事件收进 script，默认模板与自绘共用 ---------- */
-const slots = useSlots();
 const triggerAttrs = { 'data-part': 'trigger' };
 const triggerOn = { click: () => requestOpen() };
 const maskAttrs = { 'data-part': 'mask' };
@@ -347,6 +440,7 @@ const dialogAttrs = computed(() => ({
   'data-part': 'dialog',
   role: 'dialog',
   'aria-modal': 'true',
+  ...(props.title || slots.title ? { 'aria-labelledby': titleId } : {}),
   tabindex: '-1',
   style: dialogStyle.value,
 }));
@@ -369,6 +463,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KModa
     zoomed: zoomed.value,
     teleportTarget: teleportTarget.value,
     dialogEl,
+    titleId,
     rootAttrs: rootAttrs.value,
     maskAttrs,
     wrapAttrs,

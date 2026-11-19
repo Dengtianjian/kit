@@ -27,6 +27,7 @@
 import { computed, inject, ref, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
 import { CHECKBOX_GROUP_KEY } from './context';
+import { FORM_ITEM_KEY } from '../Form/context';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 
@@ -79,6 +80,7 @@ const emit = defineEmits<{ change: [checked: boolean] }>();
 
 const model = defineModel<boolean>({ default: undefined });
 const group = inject(CHECKBOX_GROUP_KEY, undefined);
+const formItem = inject(FORM_ITEM_KEY, null);
 
 const inputEl = ref<HTMLInputElement | null>(null);
 
@@ -103,7 +105,9 @@ const inputAttrs = computed(() => ({
   disabled: isDisabled.value || undefined,
   required: props.required || undefined,
   name: props.name,
-  id: props.id,
+  id: props.id ?? formItem?.controlId,
+  'aria-invalid': formItem?.invalid.value || undefined,
+  'aria-describedby': formItem?.describedBy.value,
   indeterminate: props.indeterminate && !isChecked.value,
 }));
 const inputOn = { change: onChange };

@@ -665,12 +665,14 @@ const triggerAttrs = computed(() => ({
   'aria-haspopup': 'dialog',
   'aria-controls': open.value ? `${uid}-panel` : undefined,
   'aria-disabled': props.disabled || undefined,
+  'aria-invalid': formItem?.invalid.value || undefined,
+  'aria-describedby': formItem?.describedBy.value,
   readonly: true,
   autocomplete: 'off',
   value: displayText.value,
   placeholder: resolvedPlaceholder.value,
   disabled: props.disabled || undefined,
-  id: props.id,
+  id: props.id ?? formItem?.controlId,
 }));
 const triggerOn: KOnPack = {
   click: () => setOpen(true),

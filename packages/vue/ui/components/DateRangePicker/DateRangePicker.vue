@@ -716,14 +716,17 @@ const rootOn: KOnPack = {
   keydown: (e) => onKeydown(e as KeyboardEvent),
   focusout: (e) => onFocusout(e as FocusEvent),
 };
+const triggerId = computed(() => props.id ?? formItem?.controlId);
 const triggerAttrs = (edge: 'start' | 'end') => ({
-  id: props.id ? `${props.id}-${edge}` : undefined,
+  id: triggerId.value ? (edge === 'start' ? triggerId.value : `${triggerId.value}-${edge}`) : undefined,
   role: 'combobox',
   readonly: true,
   autocomplete: 'off',
   'aria-haspopup': 'dialog',
   'aria-expanded': open.value,
   'aria-controls': open.value ? `${uid}-panel` : undefined,
+  'aria-invalid': formItem?.invalid.value || undefined,
+  'aria-describedby': formItem?.describedBy.value,
   'aria-label': edge === 'start' ? '开始日期' : '结束日期',
   placeholder: edge === 'start' ? props.startPlaceholder : props.endPlaceholder,
   disabled: props.disabled || undefined,

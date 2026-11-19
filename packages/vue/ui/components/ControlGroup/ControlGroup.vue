@@ -86,6 +86,12 @@ defineSlots<{
   display: flex;
   width: 100%;
 }
+.k-control-group:not(.is-block) > .k-radio-group,
+.k-control-group:not(.is-block) > .k-input-number,
+.k-control-group:not(.is-block) > .k-select,
+.k-control-group:not(.is-block) > .k-button {
+  flex: none; /* 不被压扁：RadioGroup 会挤成两行，按钮会缩成窄条 */
+}
 .k-control-group.is-block > * {
   flex: 1 1 0;
   width: auto;
@@ -124,6 +130,63 @@ defineSlots<{
   border-end-start-radius: 0;
   border-end-end-radius: 0;
 }
+/* 复合控件：边框/圆角画在内部视觉壳上，需把边缘规则透传到壳 */
+/* Select：圆角在 .k-select__control */
+.k-control-group.k-control-group:not(.is-vertical) > .k-select:not(:first-child) .k-select__control {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+.k-control-group.k-control-group:not(.is-vertical) > .k-select:not(:last-child) .k-select__control {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+.k-control-group.k-control-group.is-vertical > .k-select:not(:first-child) .k-select__control {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+.k-control-group.k-control-group.is-vertical > .k-select:not(:last-child) .k-select__control {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+/* InputNumber：边框/圆角在内部 KInput 根节点 */
+.k-control-group.k-control-group:not(.is-vertical) > .k-input-number:not(:first-child) .k-input {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+.k-control-group.k-control-group:not(.is-vertical) > .k-input-number:not(:last-child) .k-input {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+.k-control-group.k-control-group.is-vertical > .k-input-number:not(:first-child) .k-input {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+.k-control-group.k-control-group.is-vertical > .k-input-number:not(:last-child) .k-input {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+/* 按钮型 RadioGroup：圆角在首尾 .k-radio--button 上 */
+.k-control-group.k-control-group:not(.is-vertical)
+  > .k-radio-group--button:not(:first-child)
+  .k-radio--button:first-child {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+.k-control-group.k-control-group:not(.is-vertical)
+  > .k-radio-group--button:not(:last-child)
+  .k-radio--button:last-child {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+/* Switch 是独立胶囊：不参与拼接圆角（保持自身形状；选择器与拼角规则同权且在后） */
+.k-control-group.k-control-group:not(.is-vertical) > .k-switch,
+.k-control-group.k-control-group.is-vertical > .k-switch {
+  border-start-start-radius: var(--k-border-radius-full);
+  border-start-end-radius: var(--k-border-radius-full);
+  border-end-start-radius: var(--k-border-radius-full);
+  border-end-end-radius: var(--k-border-radius-full);
+}
+
 /* 激活项抬层：hover / 聚焦时边框盖住相邻项 */
 .k-control-group > *:focus-within,
 .k-control-group > *:hover {

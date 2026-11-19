@@ -6,10 +6,12 @@
   <div v-else class="k-form-item" :class="[{ 'has-error': status === 'error' }, classNames?.root]" v-bind="rootAttrs" :style="styles?.root">
     <label
       v-if="label != null || $slots.label"
+      :for="controlId"
       data-part="label"
       class="k-form-item__label"
       :class="classNames?.label"
       :style="styles?.label"
+      @click="focusLinkedControl"
     >
       <span v-if="isRequired" class="k-form-item__required" aria-hidden="true">*</span>
       <slot name="label">{{ label }}</slot>
@@ -19,6 +21,8 @@
       <slot />
       <div
         v-if="error || extra || $slots.extra"
+        :id="helpId"
+        :role="error ? 'alert' : undefined"
         data-part="help"
         class="k-form-item__help"
         :class="{ 'is-error': !!error }"
@@ -32,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, provide, ref, useSlots, watch } from 'vue';
+import { computed, inject, onBeforeUnmount, provide, ref, useId, useSlots, watch } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
 import Schema from 'async-validator';
 import { FORM_ITEM_KEY, FORM_KEY } from './context';
@@ -55,6 +59,11 @@ export interface KFormItemRenderScope {
   extra: string | undefined;
   /** 表级 colon 注入 */
   colon: boolean;
+  /** 自动生成的控件 id / 帮助文案 id；label for 与控件绑定共用 */
+  controlId: string;
+  helpId: string;
+  describedBy: string | undefined;
+  invalid: boolean;
   validate: (trigger?: 'blur' | 'change' | 'submit') => Promise<void>;
   clearError: () => void;
   /** data-part + --k-form-item-label-width 变量（显式 labelWidth 时） */
@@ -165,9 +174,24 @@ watch(
   },
 );
 
-/* 控件消费面（Input 族注入）：status 兜底 + blur/change 回调触发 */
+/* 控件消费面（Input 族注入）：status 兜底 + blur/change 回调触发 + label/错误关联 */
+const slots = useSlots();
+const controlId = `k-form-item-${useId()}`;
+const helpId = `${controlId}-help`;
+const hasHelp = computed(() => !!(error.value || props.extra || slots.extra));
+const describedBy = computed(() => (hasHelp.value ? helpId : undefined));
+const invalid = computed(() => status.value === 'error');
+function focusLinkedControl() {
+  const el = document.getElementById(controlId);
+  if (el instanceof HTMLElement) el.focus();
+}
+
 provide(FORM_ITEM_KEY, {
   status,
+  controlId,
+  helpId,
+  describedBy,
+  invalid,
   onFieldBlur: () => {
     if (props.validateTrigger === 'blur' || props.validateTrigger === 'both') void validate('blur').catch(() => {});
   },
@@ -187,8 +211,6 @@ const rootAttrs = computed(() => ({
   ...(labelWidthStyle.value ? { style: labelWidthStyle.value } : {}),
 }));
 
-const slots = useSlots();
-
 const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KFormItemRenderScope>(
   () => props.render,
   () => ({
@@ -200,6 +222,10 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KForm
     validating: validating.value,
     extra: props.extra,
     colon: form!.colon.value,
+    controlId,
+    helpId,
+    describedBy: describedBy.value,
+    invalid: invalid.value,
     validate,
     clearError,
     rootAttrs: rootAttrs.value,

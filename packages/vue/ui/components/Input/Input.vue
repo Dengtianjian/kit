@@ -347,8 +347,10 @@ const inputAttrs = computed(() => ({
   inputmode: props.inputmode,
   enterkeyhint: props.enterkeyhint,
   autocapitalize: props.autocapitalize,
-  id: props.id,
+  id: props.id ?? formItem?.controlId,
   name: props.name,
+  'aria-invalid': formItem?.invalid.value || undefined,
+  'aria-describedby': formItem?.describedBy.value,
 }));
 const inputOn = {
   input: onInput,

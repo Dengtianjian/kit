@@ -200,6 +200,7 @@ defineExpose({ inputEl, focus: () => inputEl.value?.focus() });
 .k-radio--button {
   position: relative;
   gap: 0;
+  white-space: nowrap;
   padding: 0 var(--k-radio-btn-padding-x, var(--k-size));
   min-height: var(--k-control-height);
   border: var(--k-line-width) solid var(--k-radio-border);
