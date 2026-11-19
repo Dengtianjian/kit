@@ -148,6 +148,7 @@ export type {
   KTableCellSpan,
   KTableSpanContext,
   KTableSpanMethod,
+  KTableTreeOptions,
 } from "./utils/table";
 export type {
   KTablePaginationConfig,

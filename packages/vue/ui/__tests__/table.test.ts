@@ -3,16 +3,22 @@ import assert from 'node:assert/strict';
 import {
   buildHeaderRows,
   buildSpanPlan,
+  buildTreeNodes,
+  collectTreeExpandableKeys,
   columnKeyOf,
   computeFixedOffsets,
+  createRowComparator,
   distributeIntegerWidths,
   filterRows,
+  filterTreeNodes,
   filterVisibleColumns,
   flattenLeafColumns,
+  flattenTreeNodes,
   getCellValue,
   getRowKey,
   paginateRows,
   sortRows,
+  sortTreeNodes,
   spanCellKey,
 } from '../utils/table.ts';
 import type { KTableColumn } from '../utils/table.ts';
@@ -410,4 +416,86 @@ test('span plan forwards row and column context and stays empty without a method
   const empty = buildSpanPlan({ rows, leaves, keyOfRow: row => row.id });
   assert.equal(empty.cells.size, 0);
   assert.equal(empty.covered.size, 0);
+});
+
+interface Dept extends Record<string, unknown> {
+  id: string;
+  name: string;
+  children?: Dept[];
+}
+
+const tree: Dept[] = [
+  {
+    id: 'a',
+    name: 'A',
+    children: [
+      { id: 'a1', name: 'A1', children: [{ id: 'a1x', name: 'A1X' }] },
+      { id: 'a2', name: 'A2' },
+    ],
+  },
+  { id: 'b', name: 'B' },
+];
+
+test('tree nodes keep row references and expose depth on flatten', () => {
+  const nodes = buildTreeNodes(tree, 'children', row => row.id);
+  assert.deepEqual(nodes.map(node => node.key), ['a', 'b']);
+  assert.equal(nodes[0].row, tree[0]);
+  assert.equal(nodes[0].children[1].key, 'a2');
+
+  const flat = flattenTreeNodes(nodes, key => key === 'a');
+  assert.deepEqual(flat.map(item => [item.key, item.depth, item.hasChildren]), [
+    ['a', 0, true],
+    ['a1', 1, true],
+    ['a2', 1, false],
+    ['b', 0, false],
+  ]);
+  assert.deepEqual(
+    flattenTreeNodes(nodes, key => key === 'a' || key === 'a1').map(item => item.key),
+    ['a', 'a1', 'a1x', 'a2', 'b'],
+  );
+});
+
+test('tree filter keeps ancestors and marks them as forced expanded', () => {
+  const nodes = buildTreeNodes(tree, 'children', row => row.id);
+  const hit = filterTreeNodes(nodes, row => row.name === 'A1X');
+  assert.deepEqual(hit.nodes.map(node => node.key), ['a']);
+  assert.deepEqual(hit.nodes[0].children.map(node => node.key), ['a1']);
+  assert.deepEqual(hit.nodes[0].children[0].children.map(node => node.key), ['a1x']);
+  assert.deepEqual([...hit.forcedExpanded].sort(), ['a', 'a1']);
+
+  const sibling = filterTreeNodes(nodes, row => row.name === 'A2');
+  assert.deepEqual(sibling.nodes[0].children.map(node => node.key), ['a2']);
+  assert.deepEqual([...sibling.forcedExpanded], ['a']);
+
+  const none = filterTreeNodes(nodes, () => false);
+  assert.equal(none.nodes.length, 0);
+});
+
+test('tree filter prunes descendants even when the parent keeps the same child count', () => {
+  const nodes = buildTreeNodes(tree, 'children', row => row.id);
+  const hit = filterTreeNodes(nodes, row => row.name === 'A1' || row.name === 'A2');
+  assert.deepEqual(hit.nodes[0].children.map(node => node.key), ['a1', 'a2']);
+  assert.equal(hit.nodes[0].children[0].children.length, 0);
+  assert.deepEqual(flattenTreeNodes(hit.nodes, () => true).map(item => item.key), ['a', 'a1', 'a2']);
+});
+
+test('tree sort only reorders siblings and keeps subtree together', () => {
+  const nodes = buildTreeNodes(tree, 'children', row => row.id);
+  const desc = sortTreeNodes(nodes, (a, b) => b.name.localeCompare(a.name));
+  assert.deepEqual(desc.map(node => node.key), ['b', 'a']);
+  assert.deepEqual(desc[1].children.map(node => node.key), ['a2', 'a1']);
+  assert.equal(desc[1].children[1].children[0].key, 'a1x');
+
+  const columnsWithName: KTableColumn<Row>[] = [{ key: 'name', dataIndex: 'name', sortable: true }];
+  const compare = createRowComparator(columnsWithName, { columnKey: 'name', order: 'ascend' });
+  assert.deepEqual(
+    sortTreeNodes(nodes, compare!).map(node => node.key),
+    ['a', 'b'],
+  );
+  assert.equal(createRowComparator(columnsWithName, null), null);
+});
+
+test('tree expandable keys include every level with children', () => {
+  const nodes = buildTreeNodes(tree, 'children', row => row.id);
+  assert.deepEqual(collectTreeExpandableKeys(nodes), ['a', 'a1']);
 });

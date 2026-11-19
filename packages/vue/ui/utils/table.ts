@@ -353,22 +353,32 @@ function defaultCompare(a: unknown, b: unknown): number {
   return String(a).localeCompare(String(b));
 }
 
-export function sortRows<T>(
-  rows: readonly T[],
+/** 排序状态 → 行比较函数；列不可排序时返回 null */
+export function createRowComparator<T>(
   columns: readonly KTableColumn<T>[],
-  sorter: KTableSortState | null,
-): T[] {
-  if (!sorter) return [...rows];
+  sorter: KTableSortState | null | undefined,
+): ((a: T, b: T) => number) | null {
+  if (!sorter) return null;
   const column = columns.find((item, index) => columnKeyOf(item, index) === sorter.columnKey);
-  if (!column?.sortable) return [...rows];
+  if (!column?.sortable) return null;
   const compare =
     typeof column.sortable === 'function'
       ? column.sortable
       : (a: T, b: T) => defaultCompare(getCellValue(a, column.dataIndex), getCellValue(b, column.dataIndex));
   const factor = sorter.order === 'descend' ? -1 : 1;
+  return (a, b) => compare(a, b) * factor;
+}
+
+export function sortRows<T>(
+  rows: readonly T[],
+  columns: readonly KTableColumn<T>[],
+  sorter: KTableSortState | null,
+): T[] {
+  const compare = createRowComparator(columns, sorter);
+  if (!compare) return [...rows];
   return rows
     .map((row, index) => ({ row, index }))
-    .sort((a, b) => compare(a.row, b.row) * factor || a.index - b.index)
+    .sort((a, b) => compare(a.row, b.row) || a.index - b.index)
     .map((entry) => entry.row);
 }
 
@@ -395,6 +405,116 @@ export function paginateRows<T>(rows: readonly T[], page: number, pageSize: numb
   if (!(pageSize > 0)) return [...rows];
   const start = (Math.max(1, page) - 1) * pageSize;
   return rows.slice(start, start + pageSize);
+}
+
+/* ---------- 树形数据：构建 / 筛选 / 排序 / 扁平化 ---------- */
+export interface KTableTreeOptions<T> {
+  /** 子节点字段名，默认 children */
+  childrenKey?: string;
+  /** 每层缩进像素，默认 16 */
+  indent?: number;
+}
+
+export interface KTableTreeNode<T> {
+  row: T;
+  key: KTableRowKey;
+  children: KTableTreeNode<T>[];
+}
+
+export interface KTableTreeFlatRow<T> {
+  row: T;
+  key: KTableRowKey;
+  /** 层级，0 为顶层 */
+  depth: number;
+  hasChildren: boolean;
+}
+
+function childrenOfRow<T>(row: T, childrenKey: string): T[] {
+  const children = (row as Record<string, unknown>)[childrenKey];
+  return Array.isArray(children) ? (children as T[]) : [];
+}
+
+/** 原始数据 → 树节点（保留行对象引用，供筛选/排序/固定行按引用比较） */
+export function buildTreeNodes<T>(
+  rows: readonly T[],
+  childrenKey: string,
+  keyOf: (row: T) => KTableRowKey,
+): KTableTreeNode<T>[] {
+  return rows.map(row => ({
+    row,
+    key: keyOf(row),
+    children: buildTreeNodes(childrenOfRow(row, childrenKey), childrenKey, keyOf),
+  }));
+}
+
+/**
+ * 树内筛选：命中节点及其祖先保留，祖先 key 写入 forcedExpanded；
+ * 未命中的子树整体剪掉。不命中的祖先即使自身命中后代也不会被剪掉。
+ */
+export function filterTreeNodes<T>(
+  nodes: readonly KTableTreeNode<T>[],
+  matches: (row: T) => boolean,
+): { nodes: KTableTreeNode<T>[]; forcedExpanded: Set<KTableRowKey> } {
+  const forcedExpanded = new Set<KTableRowKey>();
+  const visit = (node: KTableTreeNode<T>): KTableTreeNode<T> | null => {
+    const children = node.children
+      .map(visit)
+      .filter((child): child is KTableTreeNode<T> => child != null);
+    const self = matches(node.row);
+    if (!self && !children.length) return null;
+    if (children.length) forcedExpanded.add(node.key);
+    const untouched =
+      children.length === node.children.length &&
+      children.every((child, index) => child === node.children[index]);
+    return untouched ? node : { ...node, children };
+  };
+  return {
+    nodes: nodes.map(visit).filter((node): node is KTableTreeNode<T> => node != null),
+    forcedExpanded,
+  };
+}
+
+/** 同级排序：每层内部按比较函数稳定排序，子树跟随移动 */
+export function sortTreeNodes<T>(
+  nodes: readonly KTableTreeNode<T>[],
+  compare: (a: T, b: T) => number,
+): KTableTreeNode<T>[] {
+  return nodes
+    .map((node, index) => ({ node, index }))
+    .sort((a, b) => compare(a.node.row, b.node.row) || a.index - b.index)
+    .map(({ node }) =>
+      node.children.length ? { ...node, children: sortTreeNodes(node.children, compare) } : node,
+    );
+}
+
+/** 按展开状态深度优先摊平；isExpanded 同时接收“筛选命中的祖先” */
+export function flattenTreeNodes<T>(
+  nodes: readonly KTableTreeNode<T>[],
+  isExpanded: (key: KTableRowKey) => boolean,
+  depth = 0,
+  out: KTableTreeFlatRow<T>[] = [],
+): KTableTreeFlatRow<T>[] {
+  for (const node of nodes) {
+    out.push({ row: node.row, key: node.key, depth, hasChildren: node.children.length > 0 });
+    if (node.children.length && isExpanded(node.key)) {
+      flattenTreeNodes(node.children, isExpanded, depth + 1, out);
+    }
+  }
+  return out;
+}
+
+/** 深度优先收集所有含子节点的 key（defaultExpandAll） */
+export function collectTreeExpandableKeys<T>(
+  nodes: readonly KTableTreeNode<T>[],
+  out: KTableRowKey[] = [],
+): KTableRowKey[] {
+  for (const node of nodes) {
+    if (node.children.length) {
+      out.push(node.key);
+      collectTreeExpandableKeys(node.children, out);
+    }
+  }
+  return out;
 }
 
 /** 固定列偏移（px）：仅统计 numeric width 的同侧列；同侧列需连续 */

@@ -161,7 +161,7 @@
           <tr v-if="item.height != null" class="k-table__virtual-spacer">
             <td :colspan="columnSpan" :style="{ height: `${item.height}px` }"></td>
           </tr>
-          <tr v-if="item.expanded" class="k-table__expanded-row">
+          <tr v-if="item.expanded" class="k-table__expanded-row" :data-expanded-key="item.key">
             <td :colspan="columnSpan" class="k-table__cell k-table__expanded-cell">
               <KExpandedContent :content="expandedContent(item.expanded.row, item.expanded.index)" />
             </td>
@@ -264,17 +264,10 @@
                   :column="leaf.column"
                   :row="entry.row"
                   :index="entry.index"
+                  v-bind="treeCellProps(entry, leaf)"
                 />
               </td>
             </template>
-          </tr>
-          <tr
-            v-if="expandableEnabled && inlineExpanded && !entry.pinned && isExpanded(entry.row)"
-            class="k-table__expanded-row"
-          >
-            <td :colspan="columnSpan" class="k-table__cell k-table__expanded-cell">
-              <KExpandedContent :content="expandedContent(entry.row, entry.index)" />
-            </td>
           </tr>
           </template>
           </template>
@@ -452,15 +445,14 @@
                       :rowspan="spanRowSpan(entry.row, leaf.key)"
                       :colspan="spanColSpan(entry.row, leaf.key)"
                     >
-                      <KBodyCellInner :column="leaf.column" :row="entry.row" :index="entry.index" />
+                      <KBodyCellInner
+                        :column="leaf.column"
+                        :row="entry.row"
+                        :index="entry.index"
+                        v-bind="treeCellProps(entry, leaf)"
+                      />
                     </td>
                   </template>
-                </tr>
-                <tr
-                  v-if="expandableEnabled && inlineExpanded && !entry.pinned && isExpanded(entry.row)"
-                  class="k-table__expanded-row is-overlay-spacer"
-                >
-                  <td :colspan="fixedColCount(side)" class="k-table__cell"></td>
                 </tr>
               </template>
                 </template>
@@ -522,12 +514,19 @@ import KOverflowTooltip from './OverflowTooltip.vue';
 import { useTableColumns } from '../../composables/table/useTableColumns';
 import {
   buildSpanPlan,
+  buildTreeNodes,
+  collectTreeExpandableKeys,
+  columnKeyOf,
+  createRowComparator,
   distributeIntegerWidths,
   filterRows,
+  filterTreeNodes,
+  flattenTreeNodes,
   getCellValue,
   getRowKey,
   paginateRows,
   sortRows,
+  sortTreeNodes,
   spanCellKey,
   widthStyle,
 } from '../../utils/table';
@@ -547,6 +546,8 @@ import type {
   KTableSpanCell,
   KTableSpanMethod,
   KTableSpanPlan,
+  KTableTreeNode,
+  KTableTreeOptions,
 } from '../../utils/table';
 
 defineOptions({ name: 'KTable' });
@@ -565,6 +566,7 @@ export type {
   KTableCellSpan,
   KTableSpanContext,
   KTableSpanMethod,
+  KTableTreeOptions,
 } from '../../utils/table';
 
 export type KTableExpandedPlacement = 'inline' | 'bottom';
@@ -635,11 +637,19 @@ interface KTableProps<T> {
   paginationPosition?: KTablePaginationPosition;
   rowSelection?: KTableRowSelection<T>;
   scroll?: { x?: number | string; y?: number | string };
-  /** 大数据量虚拟滚动：要求等行高；展开行/行高不一致时自动退回全量渲染 */
+  /** 大数据量虚拟滚动：支持变量行高、单元格合并与展开行 */
   virtual?: boolean;
-  /** 显式指定虚拟行高（px）；内容撑高或行高不一致时仍会自动退回全量渲染 */
+  /** 虚拟滚动启用阈值（行数），默认 40 */
+  virtualThreshold?: number;
+  /** 窗口上下预渲染行数，默认 6 */
+  virtualOverscan?: number;
+  /** 滚出窗口多少行后才重算窗口，默认 3 */
+  virtualBuffer?: number;
+  /** 未测量行的估算行高（px）；实测后按真实高度计算 */
   virtualRowHeight?: number;
-  /** 单元格合并：返回 rowSpan / colSpan；colSpan 保留虚拟，rowSpan 自动关闭虚拟 */
+  /** 树形数据：按子节点字段展开，展开状态与行详情共用 expandedRowKeys */
+  tree?: boolean | KTableTreeOptions<T>;
+  /** 单元格合并：返回 rowSpan / colSpan；rowSpan 参与虚拟窗口扩张 */
   spanMethod?: KTableSpanMethod<T>;
   /** 受控排序；不传走内部状态 */
   sortState?: KTableSortState | null;
@@ -682,7 +692,11 @@ const props = withDefaults(defineProps<KTableProps<T>>(), {
   expandedPlacement: 'inline',
   expandedRender: undefined,
   virtual: false,
+  virtualThreshold: 40,
+  virtualOverscan: 6,
+  virtualBuffer: 3,
   virtualRowHeight: undefined,
+  tree: false,
   spanMethod: undefined,
 });
 
@@ -755,9 +769,18 @@ const paginationSize = computed<'sm' | 'md' | 'lg'>(
 const selectionEnabled = computed(() => Boolean(props.rowSelection));
 const selectionType = computed(() => props.rowSelection?.type ?? 'checkbox');
 const selectionName = `k-table-selection-${useId()}`;
-const expandableEnabled = computed(
+const detailEnabled = computed(
   () => props.expandable !== false && Boolean(slots.expanded || props.expandedRender),
 );
+const treeConfig = computed<KTableTreeOptions<T> | null>(() => {
+  if (!props.tree) return null;
+  return props.tree === true ? {} : props.tree;
+});
+const treeEnabled = computed(() => treeConfig.value != null);
+const treeChildrenKey = computed(() => treeConfig.value?.childrenKey ?? 'children');
+const treeIndent = computed(() => treeConfig.value?.indent ?? 16);
+/** 树形模式下展开箭头放进首列，不再单独占 44px 展开列 */
+const expandableEnabled = computed(() => detailEnabled.value && !treeEnabled.value);
 const expandedSet = computed(() => new Set(expandedRowKeys.value));
 const pinnedTopKeys = computed(() => new Set(rowPinning.value?.top ?? []));
 const pinnedBottomKeys = computed(() => new Set(rowPinning.value?.bottom ?? []));
@@ -804,22 +827,93 @@ const sort = computed(() => (props.sortState !== undefined ? props.sortState : i
 const internalFilters = ref<KTableFilterState>({});
 const activeFilters = computed(() => (props.filters !== undefined ? props.filters : internalFilters.value));
 
-/** 行 key 的 index 语义统一为 dataSource 下标（固定行/筛选/分页下保持稳定） */
+/** 行 key 的 index 语义统一为 dataSource 下标（树形按先序计数，固定行/筛选/分页下保持稳定） */
 const sourceIndex = computed(() => {
   const map = new Map<T, number>();
-  props.dataSource.forEach((row, index) => map.set(row, index));
+  let next = 0;
+  const visit = (row: T) => {
+    map.set(row, next++);
+    if (!treeEnabled.value) return;
+    const children = (row as Record<string, unknown>)[treeChildrenKey.value];
+    if (Array.isArray(children)) (children as T[]).forEach(visit);
+  };
+  props.dataSource.forEach(visit);
   return map;
 });
 
 /** 筛选/排序作用于全量叶子列：隐藏列不丢排序与筛选状态 */
 const dataColumns = computed(() => allLeaves.value.map(leaf => leaf.column));
-const processedRows = computed(() =>
-  sortRows(
+
+const treeNodes = computed<KTableTreeNode<T>[] | null>(() => {
+  if (!treeEnabled.value) return null;
+  return buildTreeNodes(props.dataSource, treeChildrenKey.value, row => rowKeyOf(row));
+});
+/** 树内筛选：保留命中行与祖先，并记录要强制展开的祖先 */
+const treeFiltered = computed(() => {
+  const nodes = treeNodes.value;
+  if (!nodes) return null;
+  const columns = dataColumns.value;
+  const hasFilters = Object.entries(activeFilters.value).some(
+    ([key, values]) =>
+      values.length > 0 &&
+      columns.some((column, index) => columnKeyOf(column, index) === key && column.filters?.length),
+  );
+  if (!hasFilters) return { nodes, forcedExpanded: new Set<KTableRowKey>() };
+  const allRows: T[] = [];
+  const collect = (list: KTableTreeNode<T>[]) => {
+    list.forEach(node => {
+      allRows.push(node.row);
+      collect(node.children);
+    });
+  };
+  collect(nodes);
+  const matched = new Set(filterRows(allRows, columns, activeFilters.value));
+  return filterTreeNodes(nodes, row => matched.has(row));
+});
+const treeSorted = computed(() => {
+  const filtered = treeFiltered.value;
+  if (!filtered) return null;
+  const compare = createRowComparator(dataColumns.value, sort.value);
+  return compare ? sortTreeNodes(filtered.nodes, compare) : filtered.nodes;
+});
+/** 固定行只支持顶层节点：固定后从树里摘出，不参与子级展开 */
+const treeVisible = computed(() => {
+  const sorted = treeSorted.value;
+  if (!sorted) return null;
+  return sorted.filter(
+    node => !pinnedTopKeys.value.has(node.key) && !pinnedBottomKeys.value.has(node.key),
+  );
+});
+const treeFlat = computed(() => {
+  const nodes = treeVisible.value;
+  if (!nodes) return null;
+  const forced = treeFiltered.value?.forcedExpanded;
+  return flattenTreeNodes(
+    nodes,
+    key => expandedSet.value.has(key) || Boolean(forced?.has(key)),
+  );
+});
+const treeMetaByKey = computed(() => {
+  const map = new Map<KTableRowKey, { depth: number; hasChildren: boolean }>();
+  treeFlat.value?.forEach(item => {
+    map.set(item.key, { depth: item.depth, hasChildren: item.hasChildren });
+  });
+  return map;
+});
+/** 筛选命中的祖先在展开态上也要显示为展开 */
+function isTreeExpanded(row: T) {
+  const key = rowKeyOf(row);
+  return expandedSet.value.has(key) || Boolean(treeFiltered.value?.forcedExpanded.has(key));
+}
+
+const processedRows = computed(() => {
+  if (treeFlat.value) return treeFlat.value.map(item => item.row);
+  return sortRows(
     filterRows(props.dataSource, dataColumns.value, activeFilters.value),
     dataColumns.value,
     sort.value,
-  ),
-);
+  );
+});
 /** 固定行不受筛选/排序/分页影响，始终按 dataSource 顺序显示 */
 const pinnedTopRows = computed(() =>
   props.dataSource.filter(row => pinnedTopKeys.value.has(rowKeyOf(row))),
@@ -861,7 +955,6 @@ const bottomExpanded = computed(
     Boolean(props.spanMethod) &&
     (props.expandedPlacement === 'bottom' || spanPlan.value.hasRowSpan),
 );
-const inlineExpanded = computed(() => !bottomExpanded.value);
 let bottomFallbackWarned = false;
 watch(
   () => props.expandedPlacement === 'bottom' && !props.spanMethod,
@@ -940,6 +1033,9 @@ interface KTableBodyRow<T> {
   pinIndex: number;
   /** rowClick / 渲染用的数据下标 */
   index: number;
+  /** 树形层级（非树形为 0） */
+  depth: number;
+  hasChildren: boolean;
 }
 const bodyRows = computed<KTableBodyRow<T>[]>(() => [
   ...pinnedTopRows.value.map((row, pinIndex) => ({
@@ -947,18 +1043,27 @@ const bodyRows = computed<KTableBodyRow<T>[]>(() => [
     pinned: 'top' as const,
     pinIndex,
     index: sourceIndex.value.get(row) ?? 0,
+    depth: 0,
+    hasChildren: false,
   })),
-  ...pageRows.value.map((row, index) => ({
-    row,
-    pinned: null,
-    pinIndex: -1,
-    index: rowIndexAt(index),
-  })),
+  ...pageRows.value.map((row, index) => {
+    const meta = treeMetaByKey.value.get(rowKeyOf(row));
+    return {
+      row,
+      pinned: null,
+      pinIndex: -1,
+      index: rowIndexAt(index),
+      depth: meta?.depth ?? 0,
+      hasChildren: meta?.hasChildren ?? false,
+    };
+  }),
   ...pinnedBottomRows.value.map((row, pinIndex) => ({
     row,
     pinned: 'bottom' as const,
     pinIndex,
     index: sourceIndex.value.get(row) ?? 0,
+    depth: 0,
+    hasChildren: false,
   })),
 ]);
 
@@ -974,25 +1079,57 @@ interface KTableRenderEntry<T> {
 const virtualRowHeight = ref(48);
 const virtualStart = ref(0);
 const virtualEnd = ref(0);
-const virtualActive = computed(() => props.virtual && expandedSet.value.size === 0);
-const virtualEnabled = computed(() => virtualActive.value && pageRows.value.length > 40);
+const virtualActive = computed(() => props.virtual);
+const virtualEnabled = computed(
+  () => virtualActive.value && pageRows.value.length > Math.max(1, props.virtualThreshold),
+);
 const pinnedTopHeight = ref(0);
 const pinnedBottomHeight = ref(0);
 /** 实测行高缓存按行 key 存，排序/筛选/换页都不失效 */
 const rowHeightCache = new Map<string, number>();
+/** 展开行高度按展开项 key 缓存；展开行占用的空间计入所属数据行的偏移 */
+const expandedHeightCache = new Map<string, number>();
 const virtualOffsets = ref<number[]>([]);
 let offsetSignature = '';
 function rowCacheKey(row: T) {
   return String(rowKeyOf(row));
 }
 const pageKeySignature = computed(() => pageRows.value.map(rowCacheKey).join('\u0001'));
+/** 展开/收起会改变行占位，必须让前缀和失效 */
+const virtualSignature = computed(
+  () => `${pageKeySignature.value}|${expandedRowKeys.value.join('\u0001')}`,
+);
+/** 展开行的估算高度：优先用已测平均值，避免滚动条总高大幅漂移 */
+function expandedHeightEstimate() {
+  if (!expandedHeightCache.size) return virtualRowHeight.value;
+  let sum = 0;
+  expandedHeightCache.forEach(height => (sum += height));
+  return Math.round(sum / expandedHeightCache.size);
+}
+function extraHeightOf(index: number) {
+  const extras = extrasByRow.value.get(index);
+  if (!extras) return 0;
+  const estimate = expandedHeightEstimate();
+  return extras.reduce(
+    (sum, entry) => sum + (expandedHeightCache.get(entry.key) ?? estimate),
+    0,
+  );
+}
 function rebuildVirtualOffsets() {
-  const heights = pageRows.value.map(row => rowHeightCache.get(rowCacheKey(row)));
-  virtualOffsets.value = buildVirtualOffsets(heights, pageRows.value.length, virtualRowHeight.value)
-    .offsets;
+  const heights = pageRows.value.map((row, index) => {
+    const base = rowHeightCache.get(rowCacheKey(row));
+    const extra = extraHeightOf(index);
+    if (base == null && extra === 0) return undefined;
+    return (base ?? virtualRowHeight.value) + extra;
+  });
+  virtualOffsets.value = buildVirtualOffsets(
+    heights,
+    pageRows.value.length,
+    virtualRowHeight.value,
+  ).offsets;
 }
 function ensureVirtualOffsets() {
-  const signature = pageKeySignature.value;
+  const signature = virtualSignature.value;
   if (signature !== offsetSignature) {
     offsetSignature = signature;
     rebuildVirtualOffsets();
@@ -1011,20 +1148,27 @@ watch(
   },
   { immediate: true },
 );
-/** 组底展开：按合并组的覆盖末行分组，展开内容追加到所属组末尾 */
-const expandedBottomMap = computed<Map<number, KTableRenderEntry<T>[]>>(() => {
+/** 行详情展开项：inline 紧随该行；合并场景挂到所属组尾；虚拟与非虚拟共用同一份 */
+const extrasByRow = computed<Map<number, KTableRenderEntry<T>[]>>(() => {
   const map = new Map<number, KTableRenderEntry<T>[]>();
-  if (!bottomExpanded.value || expandedSet.value.size === 0) return map;
-  const plan = spanPlan.value;
+  if (!detailEnabled.value || expandedSet.value.size === 0) return map;
   pageRows.value.forEach((row, index) => {
-    if (!expandedSet.value.has(rowKeyOf(row))) return;
-    const groupEnd = plan.rowCoverEnd[index] ?? index;
-    const list = map.get(groupEnd) ?? [];
+    const rowKey = rowKeyOf(row);
+    if (!expandedSet.value.has(rowKey)) return;
+    const target = bottomExpanded.value ? spanPlan.value.rowCoverEnd[index] ?? index : index;
+    const list = map.get(target) ?? [];
     list.push({
-      key: `expanded-${index}-${rowKeyOf(row)}`,
-      expanded: { row, pinned: null, pinIndex: -1, index: rowIndexAt(index) },
+      key: `expanded-${index}-${rowKey}`,
+      expanded: {
+        row,
+        pinned: null,
+        pinIndex: -1,
+        index: rowIndexAt(index),
+        depth: 0,
+        hasChildren: false,
+      },
     });
-    map.set(groupEnd, list);
+    map.set(target, list);
   });
   return map;
 });
@@ -1033,6 +1177,7 @@ const renderEntries = computed<KTableRenderEntry<T>[]>(() => {
     pinnedTopRows.value.length,
     pinnedTopRows.value.length + pageRows.value.length,
   );
+  const extras = extrasByRow.value;
   const entries: KTableRenderEntry<T>[] = bodyRows.value
     .slice(0, pinnedTopRows.value.length)
     .map(entry => ({ key: `top-${rowKeyOf(entry.row)}`, entry }));
@@ -1044,15 +1189,16 @@ const renderEntries = computed<KTableRenderEntry<T>[]>(() => {
     for (let index = virtualStart.value; index < virtualEnd.value; index++) {
       const entry = center[index];
       if (entry) entries.push({ key: `row-${rowKeyOf(entry.row)}`, entry });
+      const rowExtras = extras.get(index);
+      if (rowExtras) entries.push(...rowExtras);
     }
     const bottom = total - (offsets[virtualEnd.value] ?? total);
     if (bottom > 0) entries.push({ key: 'virtual-bottom', height: bottom });
   } else {
-    const groupExtras = expandedBottomMap.value;
     center.forEach((entry, index) => {
       entries.push({ key: `row-${rowKeyOf(entry.row)}`, entry });
-      const extras = groupExtras.get(index);
-      if (extras) entries.push(...extras);
+      const rowExtras = extras.get(index);
+      if (rowExtras) entries.push(...rowExtras);
     });
   }
   for (const entry of bodyRows.value.slice(pinnedTopRows.value.length + pageRows.value.length)) {
@@ -1074,7 +1220,12 @@ function updateVirtualWindow() {
     0,
     wrap.clientHeight - headerHeight.value - pinnedTopHeight.value - pinnedBottomHeight.value,
   );
-  const range = getVariableVirtualRange(wrap.scrollTop, viewport, offsets, 6);
+  const range = getVariableVirtualRange(
+    wrap.scrollTop,
+    viewport,
+    offsets,
+    Math.max(0, props.virtualOverscan),
+  );
   let start = range.start;
   let end = range.end;
   /* 合并格必须整块渲染：窗口上探到起点行、下探到覆盖末行 */
@@ -1085,7 +1236,7 @@ function updateVirtualWindow() {
     end = expanded.end;
   }
   /* 缓冲区：滚出当前窗口的缓冲带才重算，避免每帧重建行 */
-  const buffer = 3 * virtualRowHeight.value;
+  const buffer = Math.max(0, props.virtualBuffer) * virtualRowHeight.value;
   const insideWindow =
     virtualStart.value > 0 &&
     virtualEnd.value < count &&
@@ -1102,7 +1253,6 @@ function measureVirtualHeights() {
   const rows = table.querySelectorAll<HTMLElement>(
     ':scope > tbody > tr.k-table__row:not(.is-pinned-top):not(.is-pinned-bottom)',
   );
-  if (!rows.length) return;
   let changed = false;
   rows.forEach(row => {
     const key = row.dataset.rowKey;
@@ -1115,6 +1265,20 @@ function measureVirtualHeights() {
       changed = true;
     }
   });
+  /* 展开行单独测量：它不占数据行下标，但高度要计入所属行的偏移 */
+  table
+    .querySelectorAll<HTMLElement>(':scope > tbody > tr.k-table__expanded-row[data-expanded-key]')
+    .forEach(row => {
+      const key = row.dataset.expandedKey;
+      if (key == null) return;
+      const height = row.getBoundingClientRect().height;
+      if (!(height > 0)) return;
+      const cached = expandedHeightCache.get(key);
+      if (cached == null || Math.abs(cached - height) > 0.5) {
+        expandedHeightCache.set(key, height);
+        changed = true;
+      }
+    });
   if (!changed) return;
   /* 未显式给估算行高时，用已测行的平均值修正，避免滚动条总高大幅漂移 */
   if (typeof props.virtualRowHeight !== 'number' && rowHeightCache.size >= 8) {
@@ -1129,7 +1293,7 @@ function measureVirtualHeights() {
   const anchorIndex = hasAnchor && wrap ? findRowAtOffset(offsets, wrap.scrollTop) : 0;
   const anchorDelta = hasAnchor && wrap ? wrap.scrollTop - offsets[anchorIndex] : 0;
   rebuildVirtualOffsets();
-  offsetSignature = pageKeySignature.value;
+  offsetSignature = virtualSignature.value;
   const anchorTop = virtualOffsets.value[anchorIndex];
   if (hasAnchor && wrap && anchorTop != null) {
     const target = anchorTop + anchorDelta;
@@ -1159,6 +1323,21 @@ watch(
 const leadingWidth = computed(
   () => (expandableEnabled.value ? 44 : 0) + (selectionEnabled.value ? 44 : 0),
 );
+
+/* ---------- 树形：箭头与缩进放在首个数据列，不再额外占列 ---------- */
+const firstLeafKey = computed(() => leaves.value[0]?.key);
+function treeCellProps(entry: KTableBodyRow<T>, leaf: KTableLeaf<T>) {
+  if (!treeEnabled.value || leaf.key !== firstLeafKey.value) return {};
+  const detail = detailEnabled.value && canExpand(entry.row);
+  return {
+    showTree: true,
+    treeDepth: entry.depth,
+    treeCaret: entry.hasChildren || detail,
+    treeKind: entry.hasChildren ? 'children' : 'detail',
+    treeExpanded: isTreeExpanded(entry.row),
+    treeToggle: () => toggleExpand(entry.row),
+  };
+}
 
 /** 固定列偏移按实际渲染宽度累计：拉伸/小数宽度时也能与列宽严丝合缝 */
 const measuredWidths = ref<Record<string, number>>({});
@@ -1393,10 +1572,19 @@ function onWrapScroll() {
 onMounted(async () => {
   await nextTick();
   measureLayout();
-  if (props.defaultExpandAll && expandableEnabled.value && !expandedRowKeys.value.length) {
-    expandedRowKeys.value = props.dataSource
-      .filter(row => canExpand(row))
-      .map(row => rowKeyOf(row));
+  if (
+    props.defaultExpandAll &&
+    (expandableEnabled.value || treeEnabled.value) &&
+    !expandedRowKeys.value.length
+  ) {
+    if (treeEnabled.value) {
+      const nodes = buildTreeNodes(props.dataSource, treeChildrenKey.value, row => rowKeyOf(row));
+      expandedRowKeys.value = collectTreeExpandableKeys(nodes);
+    } else {
+      expandedRowKeys.value = props.dataSource
+        .filter(row => canExpand(row))
+        .map(row => rowKeyOf(row));
+    }
   }
   if (typeof ResizeObserver !== 'undefined') {
     layoutResizeObserver = new ResizeObserver(scheduleMeasureLayout);
@@ -1419,7 +1607,7 @@ watch(
   [
     () => headerRows.value.length,
     () => bodyRows.value.length,
-    () => expandedSet.value.size,
+    () => expandedRowKeys.value.join('\u0001'),
     () => leaves.value.map(leaf => leaf.key).join('|'),
     () => processedRows.value,
     () => props.scroll?.x,
@@ -1820,12 +2008,21 @@ const KExpandedContent = defineComponent({
   },
 });
 
-/* 单元格内容（省略/提示），主表与固定列浮层共用 */
+/* 单元格内容（省略/提示），主表与固定列浮层共用；树形首列附带缩进与展开箭头 */
 const KBodyCellInner = defineComponent({
   props: {
     column: { type: Object as PropType<KTableColumn<T>>, required: true },
     row: { type: Object as PropType<T>, required: true },
     index: { type: Number, required: true },
+    showTree: { type: Boolean, default: false },
+    treeDepth: { type: Number, default: 0 },
+    treeCaret: { type: Boolean, default: false },
+    treeKind: { type: String as PropType<'children' | 'detail'>, default: 'children' },
+    treeExpanded: { type: Boolean, default: false },
+    treeToggle: {
+      type: Function as PropType<(() => void) | undefined>,
+      default: undefined,
+    },
   },
   setup(cellProps) {
     return () => {
@@ -1834,17 +2031,62 @@ const KBodyCellInner = defineComponent({
         row: cellProps.row,
         index: cellProps.index,
       });
+      let inner: VNodeChild = content;
       if (cellProps.column.ellipsisTooltip) {
-        return h(
+        inner = h(
           KOverflowTooltip,
           { text: cellText(cellProps.column, cellProps.row) },
           { default: () => content },
         );
+      } else if (cellProps.column.ellipsis) {
+        inner = h('span', { class: 'k-table__ellipsis-text' }, [content]);
       }
-      if (cellProps.column.ellipsis) {
-        return h('span', { class: 'k-table__ellipsis-text' }, [content]);
-      }
-      return content;
+      if (!cellProps.showTree) return inner;
+      const indent = h('span', {
+        class: 'k-table__tree-indent',
+        style: { width: `${cellProps.treeDepth * treeIndent.value}px` },
+      });
+      const caret = cellProps.treeCaret
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: ['k-table__tree-caret', { 'is-expanded': cellProps.treeExpanded }],
+              'aria-expanded': cellProps.treeExpanded,
+              'aria-label': cellProps.treeExpanded
+                ? '收起'
+                : cellProps.treeKind === 'children'
+                  ? '展开子行'
+                  : '展开详情',
+              onClick: (event: MouseEvent) => {
+                event.stopPropagation();
+                cellProps.treeToggle?.();
+              },
+            },
+            [
+              h(
+                'svg',
+                {
+                  viewBox: '0 0 16 16',
+                  width: '1em',
+                  height: '1em',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  'stroke-width': 1.6,
+                  'stroke-linecap': 'round',
+                  'stroke-linejoin': 'round',
+                  'aria-hidden': 'true',
+                },
+                [h('path', { d: 'M6 3.5 10.5 8 6 12.5' })],
+              ),
+            ],
+          )
+        : h('span', { class: 'k-table__tree-caret is-placeholder', 'aria-hidden': 'true' });
+      return h('span', { class: 'k-table__tree' }, [
+        indent,
+        caret,
+        h('span', { class: 'k-table__tree-content' }, [inner]),
+      ]);
     };
   },
 });
@@ -2372,6 +2614,52 @@ defineSlots<{
 .k-table__expand.is-expanded {
   transform: rotate(90deg);
 }
+/* 树形：首列内缩进 + 箭头；叶子用占位保持文字左对齐 */
+.k-table .k-table__tree {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+}
+.k-table .k-table__tree-indent {
+  flex: none;
+  height: 1px;
+}
+.k-table .k-table__tree-caret {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-inline-end: 4px;
+  padding: 0;
+  border: none;
+  border-radius: var(--k-border-radius-sm);
+  background: transparent;
+  color: var(--k-color-text-tertiary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform var(--k-motion-duration-mid) var(--k-motion-ease-in-out-cubic);
+}
+.k-table .k-table__tree-caret:hover {
+  color: var(--k-color-primary);
+}
+.k-table .k-table__tree-caret:focus-visible {
+  outline: 2px solid var(--k-color-primary);
+  outline-offset: 1px;
+}
+.k-table .k-table__tree-caret.is-expanded {
+  transform: rotate(90deg);
+}
+.k-table .k-table__tree-caret.is-placeholder {
+  visibility: hidden;
+}
+.k-table .k-table__tree-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
 .k-table .k-table__expanded-row > .k-table__cell {
   background-color: var(--k-color-fill-quaternary);
   padding: var(--k-size) var(--k-table-cell-padding-x);
@@ -2483,6 +2771,12 @@ defineSlots<{
 }
 .k-table .k-table__cell.is-ellipsis {
   overflow: hidden;
+}
+.k-table .k-table__cell.is-ellipsis .k-table__ellipsis-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* KTooltip 的触发节点是 inline span，块级省略文本在里面会按 max-content 撑开，需改成块级并受单元格宽度约束 */
 .k-table .k-table__cell .k-tooltip__trigger {
