@@ -6,6 +6,7 @@
   <div v-else class="k-form-item" :class="[{ 'has-error': status === 'error' }, classNames?.root]" v-bind="rootAttrs" :style="styles?.root">
     <label
       v-if="label != null || $slots.label"
+      :id="labelId"
       :for="controlId"
       data-part="label"
       class="k-form-item__label"
@@ -61,6 +62,7 @@ export interface KFormItemRenderScope {
   colon: boolean;
   /** 自动生成的控件 id / 帮助文案 id；label for 与控件绑定共用 */
   controlId: string;
+  labelId: string;
   helpId: string;
   describedBy: string | undefined;
   invalid: boolean;
@@ -177,6 +179,7 @@ watch(
 /* 控件消费面（Input 族注入）：status 兜底 + blur/change 回调触发 + label/错误关联 */
 const slots = useSlots();
 const controlId = `k-form-item-${useId()}`;
+const labelId = `${controlId}-label`;
 const helpId = `${controlId}-help`;
 const hasHelp = computed(() => !!(error.value || props.extra || slots.extra));
 const describedBy = computed(() => (hasHelp.value ? helpId : undefined));
@@ -189,6 +192,7 @@ function focusLinkedControl() {
 provide(FORM_ITEM_KEY, {
   status,
   controlId,
+  labelId,
   helpId,
   describedBy,
   invalid,
@@ -223,6 +227,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KForm
     extra: props.extra,
     colon: form!.colon.value,
     controlId,
+    labelId,
     helpId,
     describedBy: describedBy.value,
     invalid: invalid.value,

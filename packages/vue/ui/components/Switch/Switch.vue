@@ -39,8 +39,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, useSlots } from 'vue';
+import { computed, inject, ref, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
+import { FORM_ITEM_KEY } from '../Form/context';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 
@@ -99,6 +100,7 @@ const emit = defineEmits<{ change: [checked: boolean] }>();
 const model = defineModel<boolean>({ default: false });
 
 const rootEl = ref<HTMLElement | null>(null);
+const formItem = inject(FORM_ITEM_KEY, null);
 const checked = computed(() => model.value === true);
 const isDisabled = computed(() => props.disabled || props.loading);
 
@@ -125,8 +127,10 @@ const rootAttrs = computed(() => ({
   'aria-checked': checked.value,
   'aria-disabled': isDisabled.value || undefined,
   disabled: isDisabled.value || undefined,
-  id: props.id,
+  id: props.id ?? formItem?.controlId,
   name: props.name,
+  'aria-describedby': formItem?.describedBy.value,
+  'aria-invalid': formItem?.invalid.value || undefined,
 }));
 const rootOn = { click: toggle, keydown: onKeydown };
 

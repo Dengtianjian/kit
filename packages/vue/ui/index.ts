@@ -117,7 +117,12 @@ export type { KPopoverRenderScope } from "./components/Popover/Popover.vue";
 export type { KPopconfirmRenderScope } from "./components/Popconfirm/Popconfirm.vue";
 export type { KModalRenderScope } from "./components/Modal/Modal.vue";
 export type { KNotificationRenderScope } from "./components/Notification/Notification.vue";
-export type { KDatePickerRenderScope, KDatePickerNavigateDir } from "./components/DatePicker/DatePicker.vue";
+export type {
+  KDatePickerRenderScope,
+  KDatePickerNavigateDir,
+  KDatePickerPreset,
+  KDatePickerDisabledTime,
+} from "./components/DatePicker/DatePicker.vue";
 export type { KDateRange } from "./components/DateRangePicker/DateRangePicker.vue";
 export type { KPickerMode, KDateViewLevel, KDateCell } from "./utils/date";
 export type {

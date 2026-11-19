@@ -48,7 +48,7 @@
           ref="popupEl"
           v-bind="dropAttrs"
           class="k-datepicker__popup"
-          :class="[classNames?.panel, { 'k-datepicker__popup--inline': inline }]"
+          :class="[classNames?.panel, { 'k-datepicker__popup--inline': inline, 'has-presets': !!presets?.length }]"
           :style="styles?.panel"
         >
           <div
@@ -63,6 +63,18 @@
             <span class="k-datepicker__nav" role="button" :aria-label="viewLevel === 'date' ? '下一月' : viewLevel === 'month' ? '下一年' : '下十年'" v-on="nextOn">›</span>
             <span v-if="showSuperNav" class="k-datepicker__nav" role="button" aria-label="下一年" v-on="superNextOn">»</span>
           </div>
+          <div class="k-datepicker__content">
+            <div v-if="presets?.length" class="k-datepicker__presets">
+              <button
+                v-for="preset in presets"
+                :key="preset.label"
+                type="button"
+                class="k-datepicker__preset"
+                :class="{ 'is-active': presetActive(preset) }"
+                @click.stop="applyPreset(preset)"
+              >{{ preset.label }}</button>
+            </div>
+            <div class="k-datepicker__main">
           <div class="k-datepicker__body">
             <div v-if="viewLevel === 'date'" class="k-datepicker__weekdays" aria-hidden="true">
               <span v-for="w in WEEKDAYS" :key="w">{{ w }}</span>
@@ -101,7 +113,7 @@
               </div>
             </div>
           </div>
-          <div v-if="showTime" class="k-datepicker__time">
+          <div v-if="showTimeUi" class="k-datepicker__time">
             <span class="k-datepicker__time-label">时间</span>
             <select
               class="k-datepicker__time-select"
@@ -119,7 +131,7 @@
               :value="timePart('minute')"
               @change="onTimeSelect('minute', $event)"
             >
-              <option v-for="m in MINUTES" :key="m" :value="m" :disabled="disabledTimeCfg.disabledMinutes?.includes(m)">{{ String(m).padStart(2, '0') }}</option>
+              <option v-for="m in minuteList" :key="m" :value="m" :disabled="disabledTimeCfg.disabledMinutes?.includes(m)">{{ String(m).padStart(2, '0') }}</option>
             </select>
             <select
               class="k-datepicker__time-select"
@@ -131,6 +143,8 @@
               <option v-for="sec in SECONDS" :key="sec" :value="sec" :disabled="disabledTimeCfg.disabledSeconds?.includes(sec)">{{ String(sec).padStart(2, '0') }}</option>
             </select>
           </div>
+            </div>
+          </div>
           <div
             data-part="footer"
             class="k-datepicker__footer"
@@ -139,7 +153,7 @@
           >
             <button type="button" class="k-datepicker__today" :disabled="todayDisabled" v-on="todayOn">今天</button>
             <span class="k-datepicker__footer-actions">
-              <button v-if="showTime" type="button" class="k-datepicker__confirm" :disabled="!canConfirmTime" @mousedown.prevent v-on="confirmOn">确定</button>
+              <button v-if="showTimeUi" type="button" class="k-datepicker__confirm" :disabled="!canConfirmTime" @mousedown.prevent v-on="confirmOn">确定</button>
               <button type="button" class="k-datepicker__clear-btn" :disabled="!hasValue" @mousedown.prevent @click="clear">清除</button>
             </span>
           </div>
@@ -185,9 +199,12 @@ export interface KDatePickerRenderScope {
   open: boolean;
   /** 面板内联常驻（无触发器/弹层） */
   inline: boolean;
-  /** v-model 毫秒时间戳（周期起点） */
-  value: number | null;
+  /** v-model 毫秒时间戳（周期起点）；multiple 时为数组 */
+  value: number | number[] | null;
   picker: KPickerMode;
+  multiple: boolean;
+  minuteStep: number;
+  presets: KDatePickerPreset[] | undefined;
   format: string | undefined;
   placeholder: string;
   disabled: boolean | undefined;
@@ -205,6 +222,8 @@ export interface KDatePickerRenderScope {
   hasValue: boolean;
   displayText: string;
   showTime: boolean;
+  presetActive: (preset: KDatePickerPreset) => boolean;
+  applyPreset: (preset: KDatePickerPreset) => void;
   /** showTime 编辑中的草稿时间戳 */
   draftDate: number | null;
   canConfirmTime: boolean;
@@ -263,6 +282,11 @@ export interface KDatePickerDisabledTime {
   disabledSeconds?: number[];
 }
 
+export interface KDatePickerPreset {
+  label: string;
+  value: number | string;
+}
+
 type DatePickerPart =
   | 'root'
   | 'trigger'
@@ -287,6 +311,12 @@ interface KDatePickerProps {
   format?: string;
   /** 选择时分秒：点日期只落草稿，需点「确定」提交；默认格式追加 HH:mm:ss */
   showTime?: boolean;
+  /** 分钟步长（1-60，showTime 时生效） */
+  minuteStep?: number;
+  /** 多选日期（v-model 为时间戳数组；与 showTime 互斥） */
+  multiple?: boolean;
+  /** 快捷选项（左侧列表；点击直接提交并关闭） */
+  presets?: KDatePickerPreset[];
   /** 时间禁用项（按当前草稿日期返回时/分/秒黑名单） */
   disabledTime?: (date: Dayjs) => KDatePickerDisabledTime;
   /** 可选范围下/上限（毫秒时间戳或可解析字符串），按 picker 粒度比较 */
@@ -306,17 +336,19 @@ const props = withDefaults(defineProps<KDatePickerProps>(), {
   size: 'md',
   variant: 'outlined',
   showTime: false,
+  minuteStep: 1,
+  multiple: false,
 });
 
 const emit = defineEmits<{
-  change: [value: number | null];
+  change: [value: number | number[] | null];
   focus: [e: FocusEvent];
   blur: [e: FocusEvent];
   panelChange: [view: number, level: KDateViewLevel];
   clear: [];
 }>();
 
-const model = defineModel<number | null>({ default: null });
+const model = defineModel<number | number[] | null>({ default: null });
 const slots = useSlots();
 const uid = useId();
 
@@ -332,28 +364,51 @@ const viewLevel = ref<KDateViewLevel>(commitLevel(props.picker));
 const focusedTs = ref<number | null>(null);
 const draftTs = ref<number | null>(null);
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
-const MINUTES = Array.from({ length: 60 }, (_, i) => i);
 const SECONDS = Array.from({ length: 60 }, (_, i) => i);
+const minuteStep = computed(() => Math.min(60, Math.max(1, Math.round(props.minuteStep) || 1)));
+const minuteList = computed(() =>
+  Array.from({ length: Math.ceil(60 / minuteStep.value) }, (_, i) => i * minuteStep.value),
+);
+
+const multiValues = computed<number[]>(() =>
+  props.multiple && Array.isArray(model.value) ? model.value : [],
+);
+const modelTs = computed<number | null>(() =>
+  props.multiple
+    ? (multiValues.value[0] ?? null)
+    : typeof model.value === 'number'
+      ? model.value
+      : null,
+);
 
 const view = computed(() => kDayjs(viewTs.value));
-const valueD = computed(() => (model.value == null ? null : kDayjs(model.value)));
-const hasValue = computed(() => model.value != null);
+const valueD = computed(() => (modelTs.value == null ? null : kDayjs(modelTs.value)));
+const hasValue = computed(() => (props.multiple ? multiValues.value.length > 0 : modelTs.value != null));
 const draftD = computed(() => (draftTs.value == null ? null : kDayjs(draftTs.value)));
 const displayValue = computed(() =>
-  panelVisible.value && props.showTime && draftD.value ? draftD.value : valueD.value,
+  panelVisible.value && showTimeUi.value && draftD.value ? draftD.value : valueD.value,
 );
-const displayText = computed(() =>
-  displayValue.value
+const displayText = computed(() => {
+  if (props.multiple) {
+    if (!multiValues.value.length) return '';
+    return [...multiValues.value]
+      .sort((a, b) => a - b)
+      .map((ts) => formatPicker(kDayjs(ts), props.picker, props.format))
+      .join(', ');
+  }
+  return displayValue.value
     ? formatPicker(
         displayValue.value,
         props.picker,
-        props.format ?? (props.showTime ? 'YYYY-MM-DD HH:mm:ss' : undefined),
+        props.format ?? (showTimeUi.value ? 'YYYY-MM-DD HH:mm:ss' : undefined),
       )
-    : '',
-);
+    : '';
+});
 const showClear = computed(() => props.clearable && hasValue.value && !props.disabled);
 /** 弹层开或 inline 常驻：面板渲染与网格交互的真相源 */
 const panelVisible = computed(() => props.inline || open.value);
+/** 多选模式不带时间编辑（避免数组与单草稿时间冲突） */
+const showTimeUi = computed(() => props.showTime && !props.multiple);
 
 const PLACEHOLDER: Record<KPickerMode, string> = {
   date: '请选择日期',
@@ -363,7 +418,7 @@ const PLACEHOLDER: Record<KPickerMode, string> = {
   year: '请选择年份',
 };
 const resolvedPlaceholder = computed(
-  () => props.placeholder ?? (props.showTime ? '请选择日期时间' : PLACEHOLDER[props.picker]),
+  () => props.placeholder ?? (props.multiple ? '请选择日期（可多选）' : showTimeUi.value ? '请选择日期时间' : PLACEHOLDER[props.picker]),
 );
 
 const minD = computed(() => (props.min != null ? kDayjs(props.min) : null));
@@ -378,17 +433,26 @@ function isDisabledCell(d: Dayjs, lp: KPickerMode): boolean {
   return false;
 }
 
-const rows = computed(() =>
-  buildRows(view.value, viewLevel.value, props.picker, {
-    value: props.showTime ? (draftD.value ?? valueD.value) : valueD.value,
+const rows = computed(() => {
+  const built = buildRows(view.value, viewLevel.value, props.picker, {
+    value: showTimeUi.value ? (draftD.value ?? valueD.value) : valueD.value,
     disabled: (d) => isDisabledCell(d, levelPicker(viewLevel.value, props.picker)),
-  }),
-);
+  });
+  if (!props.multiple || viewLevel.value !== commitLevel(props.picker)) return built;
+  const selected = new Set(multiValues.value);
+  return built.map((row) => row.map((cell) => ({ ...cell, selected: selected.has(cell.ts) })));
+});
 const disabledTimeCfg = computed<KDatePickerDisabledTime>(() => {
-  if (!props.showTime || !draftD.value) return {};
+  if (!showTimeUi.value || !draftD.value) return {};
   return props.disabledTime?.(draftD.value.startOf('day')) ?? {};
 });
-const canConfirmTime = computed(() => props.showTime && draftTs.value != null);
+const canConfirmTime = computed(() => showTimeUi.value && draftTs.value != null);
+
+function alignMinute(ts: number): number {
+  if (minuteStep.value <= 1) return ts;
+  const d = kDayjs(ts);
+  return d.minute(Math.floor(d.minute() / minuteStep.value) * minuteStep.value).valueOf();
+}
 
 function timePart(unit: 'hour' | 'minute' | 'second'): number {
   const d = draftD.value;
@@ -461,10 +525,10 @@ function setOpen(v: boolean) {
   if (v === open.value) return;
   open.value = v;
   if (v) {
-    viewTs.value = model.value ?? Date.now();
+    viewTs.value = modelTs.value ?? Date.now();
     viewLevel.value = commitLevel(props.picker);
-    focusedTs.value = startOfPicker(kDayjs(model.value ?? undefined), props.picker).valueOf();
-    draftTs.value = model.value;
+    focusedTs.value = startOfPicker(kDayjs(modelTs.value ?? undefined), props.picker).valueOf();
+    draftTs.value = showTimeUi.value && modelTs.value != null ? alignMinute(modelTs.value) : null;
   } else {
     draftTs.value = null;
     triggerEl.value?.blur();
@@ -521,7 +585,18 @@ function pick(cell: KDateCell) {
     setViewLevel(viewLevel.value === 'year' ? 'month' : 'date');
     return;
   }
-  if (props.showTime) {
+  if (props.multiple) {
+    const ts = startOfPicker(cell.date, props.picker).valueOf();
+    const set = new Set(multiValues.value);
+    if (set.has(ts)) set.delete(ts);
+    else set.add(ts);
+    const next = [...set].sort((a, b) => a - b);
+    model.value = next;
+    emit('change', next);
+    formItem?.onFieldChange();
+    return;
+  }
+  if (showTimeUi.value) {
     const base = kDayjs(cell.date).startOf('day');
     const time = draftD.value;
     const cfg = props.disabledTime?.(base) ?? {};
@@ -529,35 +604,73 @@ function pick(cell: KDateCell) {
       list.find((n) => !disabled?.includes(n)) ?? 0;
     draftTs.value = base
       .hour(time?.hour() ?? firstEnabled(HOURS, cfg.disabledHours))
-      .minute(time?.minute() ?? firstEnabled(MINUTES, cfg.disabledMinutes))
+      .minute(time?.minute() ?? firstEnabled(minuteList.value, cfg.disabledMinutes))
       .second(time?.second() ?? firstEnabled(SECONDS, cfg.disabledSeconds))
       .valueOf();
     return;
   }
-  model.value = startOfPicker(cell.date, props.picker).valueOf();
-  emit('change', model.value);
+  const ts = startOfPicker(cell.date, props.picker).valueOf();
+  model.value = ts;
+  emit('change', ts);
   formItem?.onFieldChange();
   setOpen(false);
 }
 
 function clear() {
   if (props.disabled || !hasValue.value) return;
-  model.value = null;
+  const empty = props.multiple ? [] : null;
+  model.value = empty;
   draftTs.value = null;
-  emit('change', null);
+  emit('change', empty);
   emit('clear');
   formItem?.onFieldChange();
 }
 
 function goToday() {
   if (props.disabled || todayDisabled.value) return;
-  if (props.showTime) {
-    draftTs.value = Date.now();
+  if (props.multiple) {
+    const ts = startOfPicker(kDayjs(), props.picker).valueOf();
+    const set = new Set(multiValues.value);
+    if (set.has(ts)) set.delete(ts);
+    else set.add(ts);
+    const next = [...set].sort((a, b) => a - b);
+    model.value = next;
+    emit('change', next);
+    formItem?.onFieldChange();
+    return;
+  }
+  if (showTimeUi.value) {
+    draftTs.value = alignMinute(Date.now());
     viewTs.value = draftTs.value;
     return;
   }
-  model.value = startOfPicker(kDayjs(), props.picker).valueOf();
-  emit('change', model.value);
+  const ts = startOfPicker(kDayjs(), props.picker).valueOf();
+  model.value = ts;
+  emit('change', ts);
+  formItem?.onFieldChange();
+  setOpen(false);
+}
+
+function presetTs(preset: KDatePickerPreset): number {
+  const d = kDayjs(preset.value);
+  return showTimeUi.value ? d.valueOf() : startOfPicker(d, props.picker).valueOf();
+}
+function presetActive(preset: KDatePickerPreset): boolean {
+  if (!hasValue.value) return false;
+  const ts = presetTs(preset);
+  return props.multiple ? multiValues.value.includes(ts) : modelTs.value === ts;
+}
+function applyPreset(preset: KDatePickerPreset) {
+  if (props.disabled) return;
+  const ts = presetTs(preset);
+  if (props.multiple) {
+    model.value = [ts];
+    emit('change', [ts]);
+    formItem?.onFieldChange();
+    return;
+  }
+  model.value = ts;
+  emit('change', ts);
   formItem?.onFieldChange();
   setOpen(false);
 }
@@ -634,17 +747,16 @@ watch(
 );
 onMounted(() => {
   if (!props.inline) return;
-  draftTs.value = model.value;
-  viewTs.value = model.value ?? Date.now();
+  draftTs.value = showTimeUi.value && modelTs.value != null ? modelTs.value : null;
+  viewTs.value = modelTs.value ?? Date.now();
   viewLevel.value = commitLevel(props.picker);
-  focusedTs.value = startOfPicker(kDayjs(model.value ?? undefined), props.picker).valueOf();
+  focusedTs.value = startOfPicker(kDayjs(modelTs.value ?? undefined), props.picker).valueOf();
 });
 // inline：外部改值时视图跟随
-watch(model, (v) => {
-  if (props.inline && v != null) {
-    viewTs.value = v;
-    draftTs.value = v;
-  }
+watch(model, () => {
+  if (!props.inline || modelTs.value == null) return;
+  viewTs.value = modelTs.value;
+  draftTs.value = showTimeUi.value ? modelTs.value : null;
 });
 
 /* ---------- headless 绑定包：事件/语义 attrs 收进 script，默认模板与自绘共用 ---------- */
@@ -755,13 +867,18 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KDate
     flipped: flipped.value,
     hasValue: hasValue.value,
     displayText: displayText.value,
-    showTime: !!props.showTime,
+    multiple: props.multiple,
+    minuteStep: minuteStep.value,
+    presets: props.presets,
+    presetActive,
+    applyPreset,
+    showTime: showTimeUi.value,
     draftDate: draftTs.value,
     canConfirmTime: canConfirmTime.value,
     timePart,
     updateTimePart,
     hours: HOURS,
-    minutes: MINUTES,
+    minutes: minuteList.value,
     seconds: SECONDS,
     disabledTime: disabledTimeCfg.value,
     confirmTime,
@@ -1009,10 +1126,50 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
   font-size: var(--k-font-size);
   color: var(--k-color-text);
 }
+.k-datepicker__popup.has-presets {
+  --k-datepicker-panel-width: 388px;
+}
 .k-datepicker__popup *,
 .k-datepicker__popup *::before,
 .k-datepicker__popup *::after {
   box-sizing: border-box;
+}
+.k-datepicker__content {
+  display: flex;
+}
+.k-datepicker__main {
+  flex: 1;
+  min-width: 0;
+}
+.k-datepicker__presets {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-size-xxs);
+  width: 108px;
+  padding: var(--k-size-xs);
+  border-inline-end: var(--k-line-width) solid var(--k-color-split);
+  overflow: auto;
+}
+.k-datepicker__preset {
+  padding: 4px var(--k-size-xs);
+  border: none;
+  border-radius: var(--k-border-radius-sm);
+  background: none;
+  color: var(--k-color-text-secondary);
+  font-size: var(--k-font-size-sm);
+  font-family: inherit;
+  text-align: start;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.k-datepicker__preset:hover {
+  background-color: var(--k-color-fill-tertiary);
+  color: var(--k-color-text);
+}
+.k-datepicker__preset.is-active {
+  background-color: var(--k-color-primary-bg);
+  color: var(--k-color-primary);
 }
 .k-datepicker__popup[data-placement='top'] {
   transform-origin: bottom;
@@ -1258,6 +1415,19 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
 @media (hover: none) {
   .k-datepicker__popup {
     --k-datepicker-panel-width: min(336px, calc(100vw - var(--k-size-lg)));
+  }
+  .k-datepicker__popup.has-presets {
+    --k-datepicker-panel-width: min(444px, calc(100vw - var(--k-size-lg)));
+  }
+  .k-datepicker__content {
+    flex-direction: column;
+  }
+  .k-datepicker__presets {
+    flex-direction: row;
+    width: auto;
+    border-inline-end: none;
+    border-bottom: var(--k-line-width) solid var(--k-color-split);
+    overflow-x: auto;
   }
   /* 日期/周网格保持正方形：高度跟随列宽，不再单独拉高 */
   .k-datepicker__grid--date .k-datepicker__cell {

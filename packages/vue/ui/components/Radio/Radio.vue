@@ -34,6 +34,7 @@
 import { computed, inject, ref, useSlots } from 'vue';
 import type { CSSProperties, VNodeChild } from 'vue';
 import { RADIO_GROUP_KEY } from './context';
+import { FORM_ITEM_KEY } from '../Form/context';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 
@@ -79,6 +80,7 @@ const emit = defineEmits<{ change: [checked: boolean] }>();
 
 const model = defineModel<string | number | undefined>({ default: undefined });
 const group = inject(RADIO_GROUP_KEY, undefined);
+const formItem = inject(FORM_ITEM_KEY, null);
 
 const inputEl = ref<HTMLInputElement | null>(null);
 
@@ -103,7 +105,10 @@ const inputAttrs = computed(() => ({
   checked: isChecked.value,
   disabled: isDisabled.value || undefined,
   name: props.name,
-  id: props.id,
+  // 组内由 KRadioGroup 承载 FormItem 关联，避免每个选项复用同一个 id
+  id: props.id ?? (group ? undefined : formItem?.controlId),
+  'aria-invalid': (group ? null : formItem?.invalid.value) || undefined,
+  'aria-describedby': group ? undefined : formItem?.describedBy.value,
 }));
 const inputOn = { change: onChange };
 

@@ -23,11 +23,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, provide, useSlots } from 'vue';
+import { computed, inject, provide, useSlots } from 'vue';
 import type { VNodeChild } from 'vue';
 import KRadio from './Radio.vue';
 import { RADIO_GROUP_KEY } from './context';
 import type { KRadioOptionInput } from './context';
+import { FORM_ITEM_KEY } from '../Form/context';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 
@@ -55,6 +56,8 @@ interface KRadioGroupProps {
   shape?: 'circle' | 'button';
   disabled?: boolean;
   name?: string;
+  /** 组根节点 id（缺省取 FormItem 自动 id） */
+  id?: string;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
   render?: KRenderFn<KRadioGroupRenderScope>;
 }
@@ -81,10 +84,16 @@ const normalized = computed(() =>
   (props.options ?? []).map((o) => (typeof o === 'string' ? { label: o, value: o } : o)),
 );
 
+const formItem = inject(FORM_ITEM_KEY, null);
 const rootAttrs = computed(() => ({
   'data-part': 'root',
   role: 'radiogroup',
   'aria-disabled': props.disabled || undefined,
+  id: props.id ?? formItem?.controlId,
+  tabindex: formItem ? -1 : undefined,
+  'aria-labelledby': formItem?.labelId,
+  'aria-describedby': formItem?.describedBy.value,
+  'aria-invalid': formItem?.invalid.value || undefined,
 }));
 
 const slots = useSlots();

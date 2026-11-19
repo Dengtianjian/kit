@@ -105,9 +105,10 @@ const inputAttrs = computed(() => ({
   disabled: isDisabled.value || undefined,
   required: props.required || undefined,
   name: props.name,
-  id: props.id ?? formItem?.controlId,
-  'aria-invalid': formItem?.invalid.value || undefined,
-  'aria-describedby': formItem?.describedBy.value,
+  // 组内由 KCheckboxGroup 承载 FormItem 关联，避免每个选项复用同一个 id
+  id: props.id ?? (group ? undefined : formItem?.controlId),
+  'aria-invalid': (group ? null : formItem?.invalid.value) || undefined,
+  'aria-describedby': group ? undefined : formItem?.describedBy.value,
   indeterminate: props.indeterminate && !isChecked.value,
 }));
 const inputOn = { change: onChange };

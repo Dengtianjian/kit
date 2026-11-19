@@ -12,11 +12,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, provide, useSlots } from 'vue';
+import { computed, inject, provide, useSlots } from 'vue';
 import type { VNodeChild } from 'vue';
 import KCheckbox from './Checkbox.vue';
 import { CHECKBOX_GROUP_KEY } from './context';
 import type { KCheckboxOptionInput } from './types';
+import { FORM_ITEM_KEY } from '../Form/context';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 
@@ -38,6 +39,8 @@ interface KCheckboxGroupProps {
   /** 传 options = 组自渲染清单；不传走默认插槽手写子件（两形态共用同一 context） */
   options?: KCheckboxOptionInput[];
   disabled?: boolean;
+  /** 组根节点 id（缺省取 FormItem 自动 id） */
+  id?: string;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
   render?: KRenderFn<KCheckboxGroupRenderScope>;
 }
@@ -59,7 +62,16 @@ const normalized = computed(() =>
   (props.options ?? []).map((o) => (typeof o === 'string' ? { label: o, value: o } : o)),
 );
 
-const rootAttrs = { 'data-part': 'root' };
+const formItem = inject(FORM_ITEM_KEY, null);
+const rootAttrs = computed(() => ({
+  'data-part': 'root',
+  role: 'group',
+  id: props.id ?? formItem?.controlId,
+  tabindex: formItem ? -1 : undefined,
+  'aria-labelledby': formItem?.labelId,
+  'aria-describedby': formItem?.describedBy.value,
+  'aria-invalid': formItem?.invalid.value || undefined,
+}));
 const slots = useSlots();
 
 const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KCheckboxGroupRenderScope>(
@@ -69,7 +81,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KChec
     disabled: props.disabled,
     values: values.value,
     toggle,
-    rootAttrs,
+    rootAttrs: rootAttrs.value,
     slots,
   }),
 );
