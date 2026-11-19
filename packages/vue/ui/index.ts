@@ -71,6 +71,7 @@ export { default as KAlert } from "./components/Alert/Alert.vue";
 export { default as KSpin } from "./components/Spin/Spin.vue";
 export { default as KEmpty } from "./components/Empty/Empty.vue";
 export { default as KPagination } from "./components/Pagination/Pagination.vue";
+export { default as KTable } from "./components/Table/Table.vue";
 export { default as KNotification } from "./components/Notification/Notification.vue";
 export { default as KDatePicker } from "./components/DatePicker/DatePicker.vue";
 export { default as KDateRangePicker } from "./components/DateRangePicker/DateRangePicker.vue";
@@ -117,6 +118,23 @@ export type { KInputNumberRenderScope } from "./components/InputNumber/InputNumb
 export type { KFormRenderScope } from "./components/Form/Form.vue";
 export type { KFormItemRenderScope } from "./components/Form/FormItem.vue";
 export type { KAlertRenderScope } from "./components/Alert/Alert.vue";
+export type {
+  KTableColumn,
+  KTableFilterState,
+  KTableFilterOption,
+  KTableRowKey,
+  KTableSortState,
+  KTableSortOrder,
+  KTableAlign,
+  KTableCellContext,
+  KTableLeaf,
+  KTableHeaderCell,
+} from "./utils/table";
+export type {
+  KTablePaginationConfig,
+  KTablePaginationPosition,
+  KTableRowSelection,
+} from "./components/Table/Table.vue";
 export type { KSpinRenderScope } from "./components/Spin/Spin.vue";
 export type { KPopoverRenderScope } from "./components/Popover/Popover.vue";
 export type { KPopconfirmRenderScope } from "./components/Popconfirm/Popconfirm.vue";

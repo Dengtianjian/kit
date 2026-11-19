@@ -7,7 +7,9 @@
     "*.css"
   ],
   "scripts": {
-    "ui:drift-check": "node packages/vue/ui/themes/drift-check.mjs"
+    "test": "node --import ./scripts/test-register.mjs --test packages/vue/ui/__tests__/*.test.ts",
+    "ui:drift-check": "node packages/vue/ui/themes/drift-check.mjs",
+    "ci": "pnpm test && pnpm ui:drift-check"
   },
   "author": "",
   "license": "Apache-2.0",
