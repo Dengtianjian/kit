@@ -76,6 +76,12 @@ export { default as KCardAction } from "./components/Card/CardAction.vue";
 export { default as KEmpty } from "./components/Empty/Empty.vue";
 export { default as KPagination } from "./components/Pagination/Pagination.vue";
 export { default as KTable } from "./components/Table/Table.vue";
+export { default as KBreadcrumb } from "./components/Breadcrumb/Breadcrumb.vue";
+export { default as KBreadcrumbItem } from "./components/Breadcrumb/BreadcrumbItem.vue";
+export { default as KSteps } from "./components/Steps/Steps.vue";
+export { default as KStep } from "./components/Steps/Step.vue";
+export { default as KTabs } from "./components/Tabs/Tabs.vue";
+export { default as KTabPane } from "./components/Tabs/TabPane.vue";
 export { default as KNotification } from "./components/Notification/Notification.vue";
 export { default as KDatePicker } from "./components/DatePicker/DatePicker.vue";
 export { default as KDateRangePicker } from "./components/DateRangePicker/DateRangePicker.vue";
@@ -137,6 +143,26 @@ export type {
   KBadgeRenderScope,
 } from "./components/Badge/Badge.vue";
 export type { KCardRenderScope, KCardVariant } from "./components/Card/Card.vue";
+export type {
+  KBreadcrumbItemOption,
+  KBreadcrumbItemPart,
+  KBreadcrumbPart,
+  KBreadcrumbSeparator,
+  KBreadcrumbSize,
+} from "./components/Breadcrumb/context";
+export type {
+  KStepStatus,
+  KStepsDirection,
+  KStepsSize,
+  KStepsVariant,
+} from "./components/Steps/context";
+export type {
+  KTabPanePart,
+  KTabsPart,
+  KTabsPlacement,
+  KTabsSize,
+  KTabsType,
+} from "./components/Tabs/context";
 export type {
   KTableColumn,
   KTableFilterState,

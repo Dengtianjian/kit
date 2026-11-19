@@ -30,6 +30,9 @@ const GROUP_FILE: Record<string, string> = {
   KCheckboxGroup: 'Checkbox/CheckboxGroup',
   KRadioGroup: 'Radio/RadioGroup',
   KFormItem: 'Form/FormItem',
+  KBreadcrumbItem: 'Breadcrumb/BreadcrumbItem',
+  KStep: 'Steps/Step',
+  KTabPane: 'Tabs/TabPane',
 };
 
 export function KResolver(): (name: string) => KResolverResult | undefined {
