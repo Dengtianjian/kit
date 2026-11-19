@@ -69,6 +69,7 @@ export { default as KPopconfirm } from "./components/Popconfirm/Popconfirm.vue";
 export { default as KModal } from "./components/Modal/Modal.vue";
 export { default as KAlert } from "./components/Alert/Alert.vue";
 export { default as KSpin } from "./components/Spin/Spin.vue";
+export { default as KEmpty } from "./components/Empty/Empty.vue";
 export { default as KPagination } from "./components/Pagination/Pagination.vue";
 export { default as KNotification } from "./components/Notification/Notification.vue";
 export { default as KDatePicker } from "./components/DatePicker/DatePicker.vue";
