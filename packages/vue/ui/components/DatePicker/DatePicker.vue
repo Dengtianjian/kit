@@ -178,6 +178,8 @@ import { FORM_ITEM_KEY } from '../Form/context';
 import {
   kDayjs,
   formatPicker,
+  parsePicker,
+  PICKER_FORMAT,
   startOfPicker,
   isSamePicker,
   addPicker,
@@ -221,6 +223,11 @@ export interface KDatePickerRenderScope {
   flipped: boolean;
   hasValue: boolean;
   displayText: string;
+  /** 触发器当前文本 / 是否处于输入态 / 是否禁止输入 */
+  inputText: string;
+  editing: boolean;
+  inputReadonly: boolean;
+  commitInput: () => boolean;
   showTime: boolean;
   presetActive: (preset: KDatePickerPreset) => boolean;
   applyPreset: (preset: KDatePickerPreset) => void;
@@ -309,6 +316,8 @@ interface KDatePickerProps {
   inline?: boolean;
   /** 展示格式（dayjs format；缺省按 picker 取 PICKER_FORMAT，week 用 weekYear 防跨年错位） */
   format?: string;
+  /** 触发器只读（默认允许手动输入并按 format/默认格式解析，Enter 或失焦提交） */
+  inputReadonly?: boolean;
   /** 选择时分秒：点日期只落草稿，需点「确定」提交；默认格式追加 HH:mm:ss */
   showTime?: boolean;
   /** 分钟步长（1-60，showTime 时生效） */
@@ -404,11 +413,21 @@ const displayText = computed(() => {
       )
     : '';
 });
+const inputText = ref('');
+const editing = computed(() => inputText.value !== displayText.value);
+
 const showClear = computed(() => props.clearable && hasValue.value && !props.disabled);
 /** 弹层开或 inline 常驻：面板渲染与网格交互的真相源 */
 const panelVisible = computed(() => props.inline || open.value);
 /** 多选模式不带时间编辑（避免数组与单草稿时间冲突） */
 const showTimeUi = computed(() => props.showTime && !props.multiple);
+watch(
+  displayText,
+  (v) => {
+    inputText.value = v;
+  },
+  { immediate: true },
+);
 
 const PLACEHOLDER: Record<KPickerMode, string> = {
   date: '请选择日期',
@@ -683,6 +702,22 @@ function onFocusout(e: FocusEvent) {
 /* ---------- 键盘：焦点恒留触发器，方向键按面板粒度移动，Enter 落值/下钻 ---------- */
 function onKeydown(e: KeyboardEvent) {
   if (props.disabled || e.isComposing) return;
+  if (editing.value && !props.multiple && !props.inputReadonly) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitInput();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      inputText.value = displayText.value;
+      setOpen(false);
+      triggerEl.value?.blur();
+      return;
+    }
+    return; // 输入态：方向键/退格留给文本框
+  }
   if (!open.value && !props.inline) {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
       e.preventDefault();
@@ -781,17 +816,59 @@ const triggerAttrs = computed(() => ({
   'aria-disabled': props.disabled || undefined,
   'aria-invalid': formItem?.invalid.value || undefined,
   'aria-describedby': formItem?.describedBy.value,
-  readonly: true,
+  readonly: props.inputReadonly || props.multiple || undefined,
   autocomplete: 'off',
-  value: displayText.value,
+  value: inputText.value,
   placeholder: resolvedPlaceholder.value,
   disabled: props.disabled || undefined,
   id: props.id ?? formItem?.controlId,
 }));
+function inputFormats(): string[] {
+  const formats = new Set<string>();
+  if (props.format) formats.add(props.format);
+  if (showTimeUi.value) {
+    formats.add('YYYY-MM-DD HH:mm:ss');
+    formats.add('YYYY-MM-DD HH:mm');
+    formats.add('YYYY/MM/DD HH:mm:ss');
+    formats.add('YYYY/MM/DD HH:mm');
+  }
+  if (props.picker === 'date') {
+    formats.add('YYYY-MM-DD');
+    formats.add('YYYY/MM/DD');
+  } else {
+    formats.add(PICKER_FORMAT[props.picker]);
+  }
+  return [...formats];
+}
+
+function commitInput(): boolean {
+  if (!editing.value || props.multiple || props.inputReadonly) return true;
+  const parsed = parsePicker(inputText.value, inputFormats());
+  if (!parsed || isDisabledCell(parsed, props.picker)) {
+    inputText.value = displayText.value; // 非法/禁用输入回退上一次回显
+    return false;
+  }
+  const ts = showTimeUi.value
+    ? parsed.valueOf()
+    : startOfPicker(parsed, props.picker).valueOf();
+  model.value = ts;
+  emit('change', ts);
+  formItem?.onFieldChange();
+  setOpen(false);
+  triggerEl.value?.blur();
+  return true;
+}
+
+function onInputChange(e: Event) {
+  inputText.value = (e.target as HTMLInputElement).value;
+}
+
 const triggerOn: KOnPack = {
   click: () => setOpen(true),
+  input: onInputChange,
   focus: (e) => emit('focus', e as FocusEvent),
   blur: (e) => {
+    commitInput();
     emit('blur', e as FocusEvent);
     if (!open.value) formItem?.onFieldBlur();
   },
@@ -871,6 +948,10 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KDate
     flipped: flipped.value,
     hasValue: hasValue.value,
     displayText: displayText.value,
+    inputText: inputText.value,
+    editing: editing.value,
+    inputReadonly: !!props.inputReadonly,
+    commitInput,
     multiple: props.multiple,
     minuteStep: minuteStep.value,
     presets: props.presets,

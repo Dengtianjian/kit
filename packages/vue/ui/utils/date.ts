@@ -4,6 +4,7 @@ import quarterOfYear from 'dayjs/plugin/quarterOfYear.js';
 import weekOfYear from 'dayjs/plugin/weekOfYear.js';
 import weekYear from 'dayjs/plugin/weekYear.js';
 import advancedFormat from 'dayjs/plugin/advancedFormat.js';
+import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 import 'dayjs/locale/zh-cn.js';
 
 /**
@@ -16,6 +17,7 @@ dayjs.extend(quarterOfYear);
 dayjs.extend(weekOfYear);
 dayjs.extend(weekYear);
 dayjs.extend(advancedFormat);
+dayjs.extend(customParseFormat);
 
 export type KPickerMode = 'date' | 'week' | 'month' | 'quarter' | 'year';
 export type KDateViewLevel = 'date' | 'month' | 'year';
@@ -43,6 +45,17 @@ export const PICKER_FORMAT: Record<KPickerMode, string> = {
   quarter: 'YYYY-[Q]Q',
   year: 'YYYY',
 };
+
+/** 按候选格式严格解析文本；全部失败返回 null */
+export function parsePicker(text: string, formats: string[]): Dayjs | null {
+  const value = text.trim();
+  if (!value) return null;
+  for (const format of formats) {
+    const d = dayjs(value, format, true);
+    if (d.isValid()) return d.locale('zh-cn');
+  }
+  return null;
+}
 
 export function formatPicker(d: Dayjs, picker: KPickerMode, format?: string): string {
   if (format) return d.format(format);
