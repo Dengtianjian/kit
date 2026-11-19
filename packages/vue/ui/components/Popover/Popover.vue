@@ -22,7 +22,7 @@
     >
       <span v-if="arrow" class="k-popover__arrow" aria-hidden="true" />
       <div class="k-popover__card">
-        <div v-if="title || $slots.title" data-part="title" class="k-popover__title" :class="classNames?.title" :style="styles?.title">
+        <div v-if="title || $slots.title" :id="titleId" data-part="title" class="k-popover__title" :class="classNames?.title" :style="styles?.title">
           <slot name="title">{{ title }}</slot>
           <button
             v-if="closable"
@@ -45,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance, onMounted, ref, useSlots } from 'vue';
+import { computed, getCurrentInstance, onMounted, ref, useId, useSlots } from 'vue';
 import type { CSSProperties, Ref, VNodeChild } from 'vue';
 import { usePopupHost, useOverlayPosition, usePopupDismiss } from '../../composables/usePopup';
 import { useCustomRender } from '../../composables/useCustomRender';
@@ -113,6 +113,9 @@ const innerOpen = ref(false);
 // Vue 对 Boolean prop 做 absent→false 强转，`props.open !== undefined` 判受控恒真；改查原始 vnode props
 const instance = getCurrentInstance()!;
 const controlled = computed(() => 'open' in (instance.vnode.props ?? {}));
+const slots = useSlots();
+const popupId = `k-popover-${useId()}`;
+const titleId = `${popupId}-title`;
 const visible = computed(() =>
   controlled.value ? Boolean(props.open && !props.disabled) : innerOpen.value,
 );
@@ -173,8 +176,12 @@ function hideAfter(delay: number) {
 usePopupDismiss(visible, () => setOpen(false), () => [triggerEl.value, popupEl.value]);
 
 /* ---------- headless 绑定包：事件收进 script，默认模板与自绘共用 ---------- */
-const slots = useSlots();
-const triggerAttrs = { 'data-part': 'trigger' };
+const triggerAttrs = computed(() => ({
+  'data-part': 'trigger',
+  'aria-haspopup': 'dialog',
+  'aria-expanded': visible.value ? 'true' : 'false',
+  ...(visible.value ? { 'aria-controls': popupId } : {}),
+}));
 const triggerOn = {
   mouseenter: () => { if (hasHover.value) showAfter(props.mouseEnterDelay); },
   mouseleave: () => { if (hasHover.value) hideAfter(props.mouseLeaveDelay); },
@@ -187,12 +194,14 @@ const popupOn = {
   mouseleave: () => { if (hasHover.value) hideAfter(props.mouseLeaveDelay); },
 };
 const popupAttrs = computed(() => ({
+  id: popupId,
   'data-part': 'root',
   class: popupClasses.value,
   'data-k-theme': popupTheme.value,
   'data-placement': actualPlacement.value,
   role: 'dialog',
   'aria-modal': 'false',
+  ...(props.title || slots.title ? { 'aria-labelledby': titleId } : {}),
   style: popupStyle.value,
 }));
 
@@ -204,7 +213,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KPopo
     teleportTarget: teleportTarget.value,
     triggerEl,
     popupEl,
-    triggerAttrs,
+    triggerAttrs: triggerAttrs.value,
     triggerOn,
     popupAttrs: popupAttrs.value,
     popupOn,

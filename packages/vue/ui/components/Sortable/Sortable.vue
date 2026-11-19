@@ -105,6 +105,13 @@
       </component>
     </TransitionGroup>
   </div>
+
+  <Teleport to="body" defer>
+    <div class="k-sortable__sr">
+      <span :id="instructionsId">按空格抓起，方向键移动，空格或回车放下，Esc 取消</span>
+      <span role="status" aria-live="polite" aria-atomic="true">{{ announcement }}</span>
+    </div>
+  </Teleport>
 </template>
 
 <script lang="ts">
@@ -139,7 +146,7 @@ function notifyCrossWatchers() {
 </script>
 
 <script setup lang="ts" generic="T">
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, useId, useSlots, watch } from 'vue';
 import type { ComponentPublicInstance, CSSProperties, VNodeChild } from 'vue';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn, KOnPack } from '../../composables/useCustomRender';
@@ -272,6 +279,8 @@ let pointerInsideOwn = false;
 const pointerDragging = ref(false);
 /** 键盘排序：空格/回车拾起，方向键移动，回车/空格/ Esc 结束 */
 const keyboardKey = ref<KSortableKey | null>(null);
+const instructionsId = `k-sortable-${useId()}-instructions`;
+const announcement = ref('');
 /** 最近一次落点插入位（dragmove 事件用） */
 const lastSlot = ref<number | null>(null);
 let dragStarted = false;
@@ -1225,6 +1234,7 @@ function onItemKeydown(item: T, e: KeyboardEvent) {
       e.preventDefault();
       keyboardKey.value = key;
       sourceHiddenKey.value = null;
+      announcement.value = '已抓起，方向键移动，空格或回车放下，Esc 取消';
     }
     return;
   }
@@ -1252,12 +1262,15 @@ function onItemKeydown(item: T, e: KeyboardEvent) {
     arr.splice(to, 0, moved);
     model.value = arr;
     emit('change', arr, { item: moved, from, to });
+    announcement.value = `已移动到第 ${to + 1} 项，共 ${arr.length} 项`;
     focusByKey(key);
     return;
   }
   if (e.key === ' ' || e.key === 'Enter' || e.key === 'Escape') {
     e.preventDefault();
+    const cancelled = e.key === 'Escape';
     keyboardKey.value = null;
+    announcement.value = cancelled ? '已取消移动' : '已放下';
   }
 }
 
@@ -1350,6 +1363,7 @@ const itemAttrs = (item: T) => {
     'data-shift': shifts.value.has(key) || undefined,
     tabindex: props.disabled ? undefined : 0,
     'aria-grabbed': keyboardKey.value === key ? 'true' : undefined,
+    'aria-describedby': props.disabled ? undefined : instructionsId,
   };
 };
 
@@ -1556,5 +1570,17 @@ onBeforeUnmount(() => {
 .k-sortable.is-scrolling .k-sortable__item,
 .k-sortable.is-scrolling .k-sortable__placeholder {
   transition: none;
+}
+/* 读屏专用：键盘操作说明 + 移动播报 */
+.k-sortable__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 </style>

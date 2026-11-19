@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance, onMounted, ref, useSlots } from 'vue';
+import { computed, getCurrentInstance, onMounted, ref, useId, useSlots } from 'vue';
 import type { CSSProperties, Ref, VNode, VNodeChild } from 'vue';
 import { usePopupHost, useOverlayPosition, usePopupDismiss } from '../../composables/usePopup';
 import { useCustomRender } from '../../composables/useCustomRender';
@@ -118,6 +118,7 @@ const hasHover = computed(() => triggerList.value.includes('hover'));
 const hasFocus = computed(() => triggerList.value.includes('focus'));
 const hasClick = computed(() => triggerList.value.includes('click'));
 
+const tooltipId = `k-tooltip-${useId()}`;
 const triggerEl = ref<HTMLElement | null>(null);
 const popupEl = ref<HTMLElement | null>(null);
 
@@ -159,7 +160,10 @@ function hideAfter(delay: number) {
 usePopupDismiss(visible, () => setOpen(false), () => [triggerEl.value, popupEl.value]);
 
 /* ---------- headless 绑定包：事件收进 script，默认模板与自绘共用 ---------- */
-const triggerAttrs = { 'data-part': 'trigger' };
+const triggerAttrs = computed(() => ({
+  'data-part': 'trigger',
+  ...(visible.value ? { 'aria-describedby': tooltipId } : {}),
+}));
 const triggerOn = {
   mouseenter: () => { if (hasHover.value) showAfter(props.mouseEnterDelay); },
   mouseleave: () => { if (hasHover.value) hideAfter(props.mouseLeaveDelay); },
@@ -172,6 +176,7 @@ const popupOn = {
   mouseleave: () => { if (hasHover.value) hideAfter(props.mouseLeaveDelay); },
 };
 const popupAttrs = computed(() => ({
+  id: tooltipId,
   'data-part': 'root',
   class: popupClasses.value,
   'data-k-theme': popupTheme.value,
@@ -189,7 +194,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KTool
     teleportTarget: teleportTarget.value,
     triggerEl,
     popupEl,
-    triggerAttrs,
+    triggerAttrs: triggerAttrs.value,
     triggerOn,
     popupAttrs: popupAttrs.value,
     popupOn,

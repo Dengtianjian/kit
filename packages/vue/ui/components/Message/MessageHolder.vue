@@ -1,13 +1,14 @@
 <template>
   <Teleport to="body" defer>
-    <div v-if="svc.items.value.length" :class="popupClasses" :data-k-theme="popupTheme" data-part="root" aria-live="polite">
+    <div v-if="svc.items.value.length" :class="popupClasses" :data-k-theme="popupTheme" data-part="root">
       <div
         v-for="it in svc.items.value"
         :key="it.id"
         class="k-message"
         :class="`k-message--${it.type}`"
         data-part="item"
-        role="status"
+        :role="it.type === 'error' ? 'alert' : 'status'"
+        aria-atomic="true"
       >
         <span v-if="it.icon !== null" class="k-message__icon" aria-hidden="true">
           <svg v-if="it.type === 'loading'" class="k-message__spin" viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
