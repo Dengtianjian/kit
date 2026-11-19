@@ -12,6 +12,13 @@
     @click="onRootClick"
   >
     <span
+      v-if="hasAddonBefore"
+      data-part="addon-before"
+      class="k-input__addon k-input__addon--before"
+      :class="classNames?.addonBefore"
+      :style="styles?.addonBefore"
+    ><slot name="addonBefore">{{ addonBefore }}</slot></span>
+    <span
       v-if="slots.prefix"
       data-part="prefix"
       class="k-input__prefix"
@@ -72,11 +79,18 @@
           <path d="M8 1.5a6.5 6.5 0 1 0 6.5 6.5A6.51 6.51 0 0 0 8 1.5Zm0 12A5.5 5.5 0 1 1 13.5 8 5.51 5.51 0 0 1 8 13.5Zm2.23-6.34L8.77 8l1.46 1.84a.47.47 0 1 1-.74.58L7.99 8.56 6.05 9.92a.47.47 0 1 1-.53-.78L7.31 8 5.63 6.26a.47.47 0 0 1 .67-.66L7.99 7.45 9.75 6.1a.47.47 0 1 1 .48.8Z"/>
         </svg>
       </span>
-      <span v-if="showCount" class="k-input__count">
-        <span class="k-input__count-current">{{ String(model ?? '').length }}</span>
+      <span v-if="showCount" class="k-input__count" :class="{ 'is-over': overCount }">
+        <span class="k-input__count-current">{{ countLength }}</span>
         <template v-if="maxlength"> / {{ maxlength }}</template>
       </span>
     </span>
+    <span
+      v-if="hasAddonAfter"
+      data-part="addon-after"
+      class="k-input__addon k-input__addon--after"
+      :class="classNames?.addonAfter"
+      :style="styles?.addonAfter"
+    ><slot name="addonAfter">{{ addonAfter }}</slot></span>
   </div>
 </template>
 
@@ -89,7 +103,7 @@ import type { KRenderFn } from '../../composables/useCustomRender';
 
 defineOptions({ name: 'KInput' });
 
-type InputPart = 'root' | 'prefix' | 'input' | 'suffix';
+type InputPart = 'root' | 'prefix' | 'input' | 'suffix' | 'addonBefore' | 'addonAfter';
 type InputStatus = 'error' | 'warning';
 
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
@@ -113,6 +127,12 @@ export interface KInputRenderScope {
   clearable: boolean | undefined;
   maxlength: number | string | undefined;
   showCount: boolean | undefined;
+  /** 当前字数（与原生 maxlength 一致） */
+  countLength: number;
+  /** showCount 且超过 maxlength */
+  overCount: boolean;
+  addonBefore: string | number | undefined;
+  addonAfter: string | number | undefined;
   id: string | undefined;
   name: string | undefined;
   value: string;
@@ -151,6 +171,10 @@ interface KInputProps {
   maxlength?: number | string;
   /** 字数统计（配合 maxlength；无上限时仅显示当前字数） */
   showCount?: boolean;
+  /** 前置组合标签（纯文本；#addonBefore 插槽优先） */
+  addonBefore?: string | number;
+  /** 后置组合标签（纯文本；#addonAfter 插槽优先） */
+  addonAfter?: string | number;
   autofocus?: boolean;
   autocomplete?: string;
   /** 透传原生 input[inputmode]（数字键盘等；InputNumber 消费） */
@@ -225,6 +249,13 @@ const hasValue = computed(() => model.value !== '' && model.value != null);
 const showClear = computed(
   () => props.clearable && hasValue.value && !props.disabled && !props.readonly,
 );
+const hasAddonBefore = computed(() => Boolean(slots.addonBefore) || props.addonBefore != null);
+const hasAddonAfter = computed(() => Boolean(slots.addonAfter) || props.addonAfter != null);
+const countLength = computed(() => String(model.value ?? '').length);
+const overCount = computed(() => {
+  const max = Number(props.maxlength);
+  return props.showCount && Number.isFinite(max) && max > 0 && countLength.value > max;
+});
 
 const classes = computed(() => [
   'k-input',
@@ -378,6 +409,10 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KInpu
     clearable: props.clearable,
     maxlength: props.maxlength,
     showCount: props.showCount,
+    countLength: countLength.value,
+    overCount: overCount.value,
+    addonBefore: props.addonBefore,
+    addonAfter: props.addonAfter,
     id: props.id,
     name: props.name,
     value: model.value,
@@ -396,6 +431,8 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KInpu
 defineSlots<{
   prefix?(): VNodeChild;
   suffix?(): VNodeChild;
+  addonBefore?(): VNodeChild;
+  addonAfter?(): VNodeChild;
   render?(scope: KInputRenderScope): VNodeChild;
 }>();
 
@@ -425,6 +462,11 @@ defineExpose({ inputEl, focus, blur, select, activate: focus, deactivate: blur }
   --k-input-count-color: var(--k-color-text-tertiary);
   /* 前缀/输入/后缀之间的呼吸位（默认 8px，可经变量覆盖） */
   --k-input-affix-gap: var(--k-size-xs);
+  /* 组合标签（addonBefore/After）：灰底标签，分隔线跟随边框状态色 */
+  --k-input-addon-bg: var(--k-color-fill-secondary);
+  --k-input-addon-text-color: var(--k-color-text-secondary);
+  --k-input-addon-border-color: var(--k-input-border-color);
+  --k-input-addon-padding-x: 12px;
 
   display: inline-flex;
   align-items: center;
@@ -528,6 +570,38 @@ defineExpose({ inputEl, focus, blur, select, activate: focus, deactivate: blur }
   display: block;
 }
 
+/* 组合标签：贴住外壳内侧，靠负 margin 抵消 padding/gap，不额外加包裹层 */
+.k-input__addon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  flex: none;
+  padding: 0 var(--k-input-addon-padding-x);
+  background: var(--k-input-addon-bg);
+  color: var(--k-input-addon-text-color);
+  font-size: var(--k-input-font-size);
+  white-space: nowrap;
+  cursor: default;
+}
+.k-input__addon--before {
+  margin-inline-start: calc(var(--k-input-padding-x) * -1);
+  margin-inline-end: calc(var(--k-input-affix-gap) * -1);
+  border-inline-end: var(--k-input-border-width) solid var(--k-input-addon-border-color);
+  border-start-start-radius: calc(var(--k-input-radius) - var(--k-input-border-width));
+  border-end-start-radius: calc(var(--k-input-radius) - var(--k-input-border-width));
+}
+.k-input__addon--after {
+  margin-inline-start: calc(var(--k-input-affix-gap) * -1);
+  margin-inline-end: calc(var(--k-input-padding-x) * -1);
+  border-inline-start: var(--k-input-border-width) solid var(--k-input-addon-border-color);
+  border-start-end-radius: calc(var(--k-input-radius) - var(--k-input-border-width));
+  border-end-end-radius: calc(var(--k-input-radius) - var(--k-input-border-width));
+}
+.k-input--textarea .k-input__addon {
+  margin-block: calc(var(--k-size-xs) * -1);
+}
+
 .k-input__clear {
   display: inline-flex;
   color: var(--k-input-clear-color);
@@ -553,6 +627,9 @@ defineExpose({ inputEl, focus, blur, select, activate: focus, deactivate: blur }
   font-size: var(--k-font-size-sm);
   white-space: nowrap;
 }
+.k-input__count.is-over {
+  color: var(--k-color-error);
+}
 
 /* ---------- 状态：hover / focus-within（根垫圈 = antd 路数，描在 root 非 input） ---------- */
 .k-input:not(.is-disabled):hover {
@@ -563,7 +640,7 @@ defineExpose({ inputEl, focus, blur, select, activate: focus, deactivate: blur }
   box-shadow: 0 0 0 var(--k-input-outline-width) var(--k-input-outline);
 }
 
-/* ---------- status：边框/圈随语义色；error 计数超限感留 KForm 批 ---------- */
+/* ---------- status：边框/圈随语义色；showCount 超限时计数单独标红 ---------- */
 .k-input--error {
   --k-input-border-color: var(--k-color-error);
   --k-input-hover-border-color: var(--k-color-error);
@@ -583,6 +660,13 @@ defineExpose({ inputEl, focus, blur, select, activate: focus, deactivate: blur }
   --k-input-border-color: transparent;
   --k-input-hover-border-color: transparent;
   --k-input-focus-border-color: transparent;
+  --k-input-addon-bg: var(--k-color-fill-secondary);
+  --k-input-addon-border-color: var(--k-color-border);
+}
+.k-input--borderless,
+.k-input--underlined {
+  --k-input-addon-bg: transparent;
+  --k-input-addon-border-color: var(--k-color-border);
 }
 .k-input--borderless {
   --k-input-bg: transparent;
@@ -630,9 +714,9 @@ defineExpose({ inputEl, focus, blur, select, activate: focus, deactivate: blur }
 }
 
 /* ---------- 尺寸档（controlHeight 阶梯；字号全档同值走根级 --k-input-font-size，不破 iOS 保护） ---------- */
-.k-input--xs { --k-input-height: var(--k-control-height-xs); --k-input-padding-x: var(--k-size-sm); }
-.k-input--sm { --k-input-height: var(--k-control-height-sm); }
-.k-input--lg { --k-input-height: var(--k-control-height-lg); --k-input-padding-x: var(--k-size-md); }
+.k-input--xs { --k-input-height: var(--k-control-height-xs); --k-input-padding-x: var(--k-size-sm); --k-input-addon-padding-x: var(--k-size-sm); }
+.k-input--sm { --k-input-height: var(--k-control-height-sm); --k-input-addon-padding-x: var(--k-size-sm); }
+.k-input--lg { --k-input-height: var(--k-control-height-lg); --k-input-padding-x: var(--k-size-md); --k-input-addon-padding-x: var(--k-size); }
 
 /* 按压遮罩豁免：输入族不套 Button 的 hover:none 黑 8%（表单件按压语义 = 聚焦，不是触发） */
 

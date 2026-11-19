@@ -25,7 +25,15 @@
             ref="stageEl"
             data-part="stage"
             class="k-preview__stage"
-            :class="[classNames?.stage, { 'is-gesturing': gesturing, 'is-media': !isImage }]"
+            :class="[
+              classNames?.stage,
+              {
+                'is-gesturing': gesturing,
+                'is-media': !isImage,
+                'is-pannable': isPannable,
+                'is-panning': panning,
+              },
+            ]"
             :style="styles?.stage"
             v-on="stageOn"
           >
@@ -44,6 +52,13 @@
                 mode="out-in"
               >
                 <div :key="safeCurrent" class="k-preview__slide">
+                  <div
+                    v-if="mediaState === 'loading'"
+                    class="k-preview__skeleton"
+                    :class="classNames?.skeleton"
+                    :style="styles?.skeleton"
+                    aria-hidden="true"
+                  />
                   <img
                     v-bind="imageAttrs"
                     :key="retryTick"
@@ -67,6 +82,57 @@
                 @error="onMediaError"
               />
               <div
+                v-else-if="currentType === 'audio'"
+                class="k-preview__audio-wrap"
+                :class="classNames?.audio"
+                :style="styles?.audio"
+              >
+                <audio
+                  ref="mediaEl"
+                  :key="`${safeCurrent}-${retryTick}`"
+                  v-bind="audioAttrs"
+                  class="k-preview__audio"
+                  @loadeddata="onMediaLoad"
+                  @error="onMediaError"
+                />
+                <span class="k-preview__audio-name">{{ currentItem.name ?? currentItem.src }}</span>
+              </div>
+              <div
+                v-else-if="currentType === 'pdf'"
+                class="k-preview__pdf-wrap"
+                :class="classNames?.pdf"
+                :style="styles?.pdf"
+              >
+                <iframe
+                  class="k-preview__pdf"
+                  :src="currentItem.src"
+                  :title="currentItem.name ?? 'PDF 预览'"
+                />
+                <a
+                  class="k-preview__pdf-open"
+                  :href="currentItem.src"
+                  target="_blank"
+                  rel="noopener"
+                >新窗口打开</a>
+              </div>
+              <div
+                v-else-if="currentType === 'office'"
+                class="k-preview__document"
+                :class="classNames?.document"
+                :style="styles?.document"
+              >
+                <span class="k-preview__doc-badge">{{ officeLabel }}</span>
+                <strong class="k-preview__fallback-name">{{ currentItem.name ?? currentItem.src }}</strong>
+                <p class="k-preview__unsupported">Office 文档不在页面内解析，可下载或在新窗口打开</p>
+                <a
+                  class="k-preview__fallback-link"
+                  :href="currentItem.src"
+                  target="_blank"
+                  rel="noopener"
+                  download
+                >打开原文件</a>
+              </div>
+              <div
                 v-else
                 class="k-preview__fallback"
                 :class="classNames?.fallback"
@@ -84,7 +150,7 @@
               </div>
 
               <div
-                v-if="mediaState === 'loading'"
+                v-if="mediaState === 'loading' && !isImage"
                 class="k-preview__loading"
                 role="status"
                 aria-label="加载中"
@@ -220,8 +286,8 @@ import type { KRenderFn, KOnPack } from '../../composables/useCustomRender';
 
 defineOptions({ name: 'KPreview' });
 
-/** 内置 image / video；其他类型（如 pdf）由 resolveType + renderers / #item 接管 */
-export type KPreviewItemType = 'image' | 'video' | (string & {});
+/** 内置 image / video / audio / pdf / office；其他类型由 resolveType + renderers / #item 接管 */
+export type KPreviewItemType = 'image' | 'video' | 'audio' | 'pdf' | 'office' | (string & {});
 
 export interface KPreviewItem {
   src: string;
@@ -250,13 +316,19 @@ export type KPreviewRenderer = (ctx: KPreviewRendererContext) => VNodeChild;
 
 const IMAGE_RE = /\.(?:png|jpe?g|gif|webp|avif|svg|bmp)(?:[?#]|$)/i;
 const VIDEO_RE = /\.(?:mp4|webm|ogv|mov|m4v)(?:[?#]|$)/i;
+const AUDIO_RE = /\.(?:mp3|wav|ogg|oga|m4a|aac|flac)(?:[?#]|$)/i;
 const PDF_RE = /\.pdf(?:[?#]|$)/i;
+const OFFICE_RE = /\.(?:docx?|xlsx?|pptx?)(?:[?#]|$)/i;
 function inferType(src: string): string {
   if (/^data:image\//i.test(src)) return 'image';
   if (/^data:video\//i.test(src)) return 'video';
+  if (/^data:audio\//i.test(src)) return 'audio';
+  if (/^data:application\/pdf/i.test(src)) return 'pdf';
   if (IMAGE_RE.test(src)) return 'image';
   if (VIDEO_RE.test(src)) return 'video';
+  if (AUDIO_RE.test(src)) return 'audio';
   if (PDF_RE.test(src)) return 'pdf';
+  if (OFFICE_RE.test(src)) return 'office';
   return 'other';
 }
 
@@ -268,9 +340,14 @@ export interface KPreviewRenderScope {
   /** 当前序号（0 基） */
   current: number;
   currentItem: KPreviewItem | null;
-  /** 解析后的当前类型：image / video / pdf / other / 自定义 */
+  /** 解析后的当前类型：image / video / audio / pdf / office / other / 自定义 */
   currentType: string;
   scale: number;
+  /** 平移偏移（仅放大后可拖拽，px） */
+  panX: number;
+  panY: number;
+  /** 当前是否可拖拽平移（图片且 scale > 1） */
+  isPannable: boolean;
   /** 旋转角（0/90/180/270） */
   rotate: number;
   /** 是否水平翻转 */
@@ -323,6 +400,10 @@ type PreviewPart =
   | 'stage'
   | 'image'
   | 'video'
+  | 'audio'
+  | 'pdf'
+  | 'document'
+  | 'skeleton'
   | 'fallback'
   | 'toolbar'
   | 'nav'
@@ -343,7 +424,7 @@ interface KPreviewProps {
   thumbnails?: boolean;
   /** 类型判定钩子：返回 undefined 时回落后缀推断 */
   resolveType?: (item: KPreviewItem) => string | undefined;
-  /** 按类型注册渲染函数；优先级低于 #item 插槽、高于内置 image/video */
+  /** 按类型注册渲染函数；优先级低于 #item 插槽、高于内置 image/video/audio/pdf/office */
   renderers?: Record<string, KPreviewRenderer>;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换（含 Teleport/Transition） */
   render?: KRenderFn<KPreviewRenderScope>;
@@ -407,10 +488,12 @@ const rootClasses = computed(() => [
   { 'has-thumbs': showThumbs.value },
 ]);
 
-const mediaEl = ref<HTMLVideoElement | null>(null);
+const mediaEl = ref<HTMLMediaElement | null>(null);
 const thumbsEl = ref<HTMLElement | null>(null);
 const mediaState = ref<'loading' | 'ready' | 'error'>('ready');
 const retryTick = ref(0);
+const panning = ref(false);
+const isPannable = computed(() => isImage.value && scale.value > 1);
 const thumbErrors = ref<Set<number>>(new Set());
 const thumbEdges = reactive({ scrollable: false, atStart: true, atEnd: true });
 
@@ -429,7 +512,7 @@ function onThumbScroll() {
 }
 
 function isMediaType(type: string) {
-  return type === 'image' || type === 'video';
+  return type === 'image' || type === 'video' || type === 'audio';
 }
 function onMediaLoad() {
   mediaState.value = 'ready';
@@ -455,10 +538,18 @@ function thumbSrc(item: KPreviewItem): string | undefined {
 function thumbLabel(item: KPreviewItem): string {
   return item.name ?? (inferType(item.src) === 'video' ? '视频' : currentTypeLabel(item));
 }
+function fileExtLabel(item: KPreviewItem): string {
+  const m = /\.([a-z0-9]+)(?:[?#]|$)/i.exec(item.name ?? item.src);
+  return m ? m[1].toUpperCase() : 'FILE';
+}
 function currentTypeLabel(item: KPreviewItem): string {
   const type = item.type ?? props.resolveType?.(item) ?? inferType(item.src);
+  if (type === 'office') return fileExtLabel(item);
   return type.toUpperCase();
 }
+const officeLabel = computed(() =>
+  currentItem.value ? fileExtLabel(currentItem.value) : 'FILE',
+);
 const rendererComponent = computed(() => {
   const fn = props.renderers?.[currentType.value];
   if (!fn || !currentItem.value) return null;
@@ -501,6 +592,7 @@ function resetView() {
   setScale(1);
   panX.value = 0;
   panY.value = 0;
+  panning.value = false;
   rotate.value = 0;
   flipX.value = false;
 }
@@ -693,6 +785,7 @@ function onPointerMove(e: PointerEvent) {
     // 拖动开始才捕获指针：单纯点卡片不捕获，避免 click 目标被重定向到舞台
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     suppressClick = true;
+    panning.value = true;
     panX.value += e.clientX - panLast.x;
     panY.value += e.clientY - panLast.y;
     panLast = { x: e.clientX, y: e.clientY };
@@ -701,6 +794,7 @@ function onPointerMove(e: PointerEvent) {
 function onPointerUp(e: PointerEvent) {
   pointers.delete(e.pointerId);
   if (!pointers.size) gesturing.value = false;
+  panning.value = false;
   if (pinching) {
     pinching = false;
     swipe = null;
@@ -723,6 +817,7 @@ function onPointerUp(e: PointerEvent) {
 function onPointerCancel(e: PointerEvent) {
   pointers.delete(e.pointerId);
   if (!pointers.size) gesturing.value = false;
+  panning.value = false;
   pinchStartDist = 0;
   pinching = false;
   panLast = null;
@@ -826,6 +921,12 @@ const videoAttrs = computed(() => ({
   playsinline: true,
   preload: 'metadata',
 }));
+const audioAttrs = computed(() => ({
+  'data-part': 'audio',
+  src: currentItem.value?.src,
+  controls: true,
+  preload: 'metadata',
+}));
 function thumbOn(index: number): KOnPack {
   return {
     click: (e) => {
@@ -839,8 +940,26 @@ watch([safeCurrent, openModel, currentType], () => {
   retryTick.value = 0;
   mediaState.value = isMediaType(currentType.value) ? 'loading' : 'ready';
 });
+const preloadedSources = new Set<string>();
+function preloadNeighbors() {
+  for (let offset = -2; offset <= 2; offset += 1) {
+    if (!offset) continue;
+    const item = props.items[safeCurrent.value + offset];
+    if (!item) continue;
+    const type = item.type ?? props.resolveType?.(item) ?? inferType(item.src);
+    if (type !== 'image' || /^data:/i.test(item.src) || preloadedSources.has(item.src)) continue;
+    preloadedSources.add(item.src);
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = item.src;
+  }
+}
+watch([safeCurrent, openModel], () => {
+  if (openModel.value) nextTick(preloadNeighbors);
+});
 watch(() => props.items, () => {
   thumbErrors.value = new Set();
+  preloadedSources.clear();
 });
 watch([safeCurrent, openModel, showThumbs], async () => {
   if (!openModel.value || !showThumbs.value) return;
@@ -867,6 +986,9 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KPrev
     currentItem: currentItem.value,
     currentType: currentType.value,
     scale: scale.value,
+    panX: panX.value,
+    panY: panY.value,
+    isPannable: isPannable.value,
     rotate: rotate.value,
     flipX: flipX.value,
     minScale: props.minScale,
@@ -958,12 +1080,41 @@ defineExpose({ open: () => setOpen(true), close, next, prev, setCurrent, setScal
 .k-preview__stage.is-gesturing .k-preview__img {
   transition: none;
 }
+.k-preview__slide {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .k-preview__img {
+  position: relative;
+  z-index: 1;
   max-width: 86vw;
   max-height: 86vh;
   object-fit: contain;
   user-select: none;
   transition: transform var(--k-motion-duration-fast) var(--k-motion-ease-out-cubic);
+}
+.k-preview__skeleton {
+  position: absolute;
+  z-index: 0;
+  width: min(60vw, 720px);
+  height: min(60vh, 480px);
+  border-radius: var(--k-border-radius-lg);
+  background: linear-gradient(
+    100deg,
+    rgb(255 255 255 / 0.06) 30%,
+    rgb(255 255 255 / 0.16) 50%,
+    rgb(255 255 255 / 0.06) 70%
+  );
+  background-size: 220% 100%;
+  animation: k-preview-shimmer 1.2s ease-in-out infinite;
+}
+.k-preview__stage.is-pannable {
+  cursor: grab;
+}
+.k-preview__stage.is-panning {
+  cursor: grabbing;
 }
 .k-preview__stage.is-media {
   touch-action: auto;
@@ -972,6 +1123,73 @@ defineExpose({ open: () => setOpen(true), close, next, prev, setCurrent, setScal
   max-width: 86vw;
   max-height: 86vh;
   background: #000;
+}
+.k-preview__audio-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--k-size);
+  max-width: min(560px, 80vw);
+  padding: var(--k-size-lg);
+  border-radius: var(--k-border-radius-lg);
+  background: var(--k-preview-control-bg);
+  color: var(--k-preview-control-color);
+}
+.k-preview__audio {
+  width: min(420px, 70vw);
+}
+.k-preview__audio-name {
+  font-size: var(--k-font-size-sm);
+  word-break: break-all;
+}
+.k-preview__pdf-wrap {
+  position: relative;
+  width: min(86vw, 1100px);
+  height: 86vh;
+  border-radius: var(--k-border-radius-lg);
+  overflow: hidden;
+  background: #fff;
+}
+.k-preview__pdf {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.k-preview__pdf-open {
+  position: absolute;
+  z-index: 1;
+  top: 12px;
+  inset-inline-end: 12px;
+  padding: 6px 12px;
+  border-radius: var(--k-border-radius);
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: var(--k-font-size-sm);
+  text-decoration: none;
+}
+.k-preview__pdf-open:hover {
+  background: rgb(0 0 0 / 0.72);
+}
+.k-preview__document {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--k-size-sm);
+  max-width: min(560px, 80vw);
+  padding: var(--k-size-lg);
+  border-radius: var(--k-border-radius-lg);
+  background: var(--k-preview-control-bg);
+  color: var(--k-preview-control-color);
+  text-align: center;
+}
+.k-preview__doc-badge {
+  display: inline-flex;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.18);
+  font-size: var(--k-font-size-xs);
+  font-weight: var(--k-font-weight-strong);
+  letter-spacing: 0.06em;
 }
 .k-preview__unsupported,
 .k-preview__empty {
@@ -1054,6 +1272,10 @@ defineExpose({ open: () => setOpen(true), close, next, prev, setCurrent, setScal
 }
 @keyframes k-preview-spin {
   to { transform: rotate(360deg); }
+}
+@keyframes k-preview-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -20% 0; }
 }
 
 /* 控件：白字半透明圆钮，置于遮罩之上 */
