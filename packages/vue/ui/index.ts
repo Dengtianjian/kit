@@ -145,11 +145,16 @@ export type {
   KTableCellContext,
   KTableLeaf,
   KTableHeaderCell,
+  KTableCellSpan,
+  KTableSpanContext,
+  KTableSpanMethod,
 } from "./utils/table";
 export type {
   KTablePaginationConfig,
   KTablePaginationPosition,
   KTableRowSelection,
+  KTableExpandedPlacement,
+  KTableExpandedRenderContext,
 } from "./components/Table/Table.vue";
 export type { KSpinRenderScope } from "./components/Spin/Spin.vue";
 export type { KPopoverRenderScope } from "./components/Popover/Popover.vue";

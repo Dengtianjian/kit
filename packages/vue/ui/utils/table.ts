@@ -68,6 +68,141 @@ export interface KTableHeaderCell<T = Record<string, unknown>> {
   leafKey?: string;
 }
 
+/** 单元格合并：返回 rowSpan / colSpan，缺省按 1 处理 */
+export interface KTableCellSpan {
+  rowSpan?: number;
+  colSpan?: number;
+}
+
+export interface KTableSpanContext<T = Record<string, unknown>> {
+  row: T;
+  /** 当前页展示序（排序/筛选后，从 0 开始） */
+  rowIndex: number;
+  column: KTableColumn<T>;
+  /** 可见叶子列序号，不含展开/选择列 */
+  columnIndex: number;
+}
+
+export type KTableSpanMethod<T = Record<string, unknown>> = (
+  context: KTableSpanContext<T>,
+) => KTableCellSpan | undefined;
+
+export interface KTableSpanCell {
+  rowSpan: number;
+  colSpan: number;
+}
+
+export interface KTableSpanPlan {
+  /** 合并起点：rowKey\0leafKey */
+  cells: Map<string, KTableSpanCell>;
+  /** 被覆盖、不再渲染的单元格：rowKey\0leafKey */
+  covered: Set<string>;
+  hasRowSpan: boolean;
+  /** 合并跨了左右固定区与中区：浮层无法承载，需要退回粘性单元格 */
+  crossesFixedRegion: boolean;
+  /** 每行所属合并格的起始行（无合并时为自身下标），供虚拟窗口上探 */
+  rowOrigin: number[];
+  /** 每行所在合并格的覆盖末行（无合并时为自身下标），供虚拟窗口下探 */
+  rowCoverEnd: number[];
+}
+
+export function spanCellKey(rowKey: string | number, leafKey: string): string {
+  return `${rowKey}\u0000${leafKey}`;
+}
+
+function spanLimit(value: unknown): number {
+  const number = Math.floor(Number(value ?? 1));
+  return Number.isFinite(number) && number > 0 ? number : 1;
+}
+
+/** 合并计划：从覆盖率网格推导起点与跳过集合，跨区只标记不截断（交给粘性回退） */
+export function buildSpanPlan<T>(options: {
+  rows: readonly T[];
+  leaves: readonly KTableLeaf<T>[];
+  keyOfRow: (row: T, index: number) => string | number;
+  spanMethod?: KTableSpanMethod<T>;
+}): KTableSpanPlan {
+  const plan: KTableSpanPlan = {
+    cells: new Map(),
+    covered: new Set(),
+    hasRowSpan: false,
+    crossesFixedRegion: false,
+    rowOrigin: [],
+    rowCoverEnd: [],
+  };
+  const { rows, leaves, keyOfRow, spanMethod } = options;
+  plan.rowOrigin = rows.map((_, index) => index);
+  plan.rowCoverEnd = rows.map((_, index) => index);
+  if (!spanMethod || !rows.length || !leaves.length) return plan;
+  const occupied = rows.map(() => new Array<boolean>(leaves.length).fill(false));
+  const rowKeys = rows.map((row, index) => keyOfRow(row, index));
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    const row = rows[rowIndex];
+    const rowKey = rowKeys[rowIndex];
+    for (let columnIndex = 0; columnIndex < leaves.length; columnIndex++) {
+      if (occupied[rowIndex][columnIndex]) continue;
+      const leaf = leaves[columnIndex];
+      const requested = spanMethod({ row, rowIndex, column: leaf.column, columnIndex });
+      let rowSpan = Math.min(spanLimit(requested?.rowSpan), rows.length - rowIndex);
+      let colSpan = Math.min(spanLimit(requested?.colSpan), leaves.length - columnIndex);
+      /* 不能压到已合并的单元格：逐格收缩到空位 */
+      while (colSpan > 1) {
+        let free = true;
+        for (let offset = 1; offset < colSpan; offset++) {
+          if (occupied[rowIndex][columnIndex + offset]) {
+            free = false;
+            break;
+          }
+        }
+        if (free) break;
+        colSpan--;
+      }
+      while (rowSpan > 1) {
+        let free = true;
+        for (let rowOffset = 1; rowOffset < rowSpan && free; rowOffset++) {
+          for (let offset = 0; offset < colSpan; offset++) {
+            if (occupied[rowIndex + rowOffset][columnIndex + offset]) {
+              free = false;
+              break;
+            }
+          }
+        }
+        if (free) break;
+        rowSpan--;
+      }
+      if (colSpan > 1) {
+        const region = leaf.column.fixed ?? 'center';
+        for (let offset = 1; offset < colSpan; offset++) {
+          if ((leaves[columnIndex + offset].column.fixed ?? 'center') !== region) {
+            plan.crossesFixedRegion = true;
+            break;
+          }
+        }
+      }
+      if (rowSpan > 1) plan.hasRowSpan = true;
+      if (rowSpan > 1 || colSpan > 1) {
+        plan.cells.set(spanCellKey(rowKey, leaf.key), { rowSpan, colSpan });
+      }
+      if (rowSpan > 1) {
+        const coverEnd = rowIndex + rowSpan - 1;
+        for (let rowOffset = rowIndex; rowOffset <= coverEnd; rowOffset++) {
+          if (rowIndex < plan.rowOrigin[rowOffset]) plan.rowOrigin[rowOffset] = rowIndex;
+          if (coverEnd > plan.rowCoverEnd[rowOffset]) plan.rowCoverEnd[rowOffset] = coverEnd;
+        }
+      }
+      for (let rowOffset = 0; rowOffset < rowSpan; rowOffset++) {
+        for (let offset = 0; offset < colSpan; offset++) {
+          occupied[rowIndex + rowOffset][columnIndex + offset] = true;
+          if (rowOffset > 0 || offset > 0) {
+            plan.covered.add(spanCellKey(rowKeys[rowIndex + rowOffset], leaves[columnIndex + offset].key));
+          }
+        }
+      }
+    }
+  }
+  return plan;
+}
+
 function leavesOf<T>(columns: readonly KTableColumn<T>[]): number {
   return columns.reduce(
     (total, column) => total + (column.children?.length ? leavesOf(column.children) : 1),

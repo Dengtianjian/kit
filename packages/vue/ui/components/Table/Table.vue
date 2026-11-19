@@ -60,7 +60,7 @@
         v-model:current="current"
         v-model:page-size="perPage"
         :total="paginationTotal"
-        :size="size === 'sm' ? 'sm' : 'md'"
+        :size="paginationSize"
         :page-size-options="paginationConfig.pageSizeOptions"
         :show-size-changer="paginationConfig.showSizeChanger"
         :show-quick-jumper="paginationConfig.showQuickJumper"
@@ -161,6 +161,11 @@
           <tr v-if="item.height != null" class="k-table__virtual-spacer">
             <td :colspan="columnSpan" :style="{ height: `${item.height}px` }"></td>
           </tr>
+          <tr v-if="item.expanded" class="k-table__expanded-row">
+            <td :colspan="columnSpan" class="k-table__cell k-table__expanded-cell">
+              <KExpandedContent :content="expandedContent(item.expanded.row, item.expanded.index)" />
+            </td>
+          </tr>
           <template v-for="entry in (item.entry ? [item.entry] : [])" :key="`row-${item.key}`">
           <tr
             class="k-table__row"
@@ -231,40 +236,44 @@
                 @update:model-value="selectSingleRow(entry.row)"
               />
             </td>
-            <td
-              v-for="leaf in leaves"
-              :key="leaf.key"
-              class="k-table__cell"
-              :class="[
-                leaf.column.classNames?.cell,
-                isOverlayColumn(leaf.column) ? 'is-overlay-placeholder' : fixedClass(leaf.column, leaf.key),
-                {
-                  'is-align-center': leaf.column.align === 'center',
-                  'is-align-right': leaf.column.align === 'right',
-                  'is-ellipsis': leaf.column.ellipsis,
-                },
-              ]"
-              :style="[
-                isOverlayColumn(leaf.column) ? null : cellStyle(leaf.column, leaf.key),
-                isOverlayColumn(leaf.column) ? null : pinnedCellStyle(entry),
-                leaf.column.styles?.cell,
-              ]"
-              :aria-hidden="isOverlayColumn(leaf.column) ? 'true' : undefined"
-            >
-              <KBodyCellInner
-                v-if="!isOverlayColumn(leaf.column)"
-                :column="leaf.column"
-                :row="entry.row"
-                :index="entry.index"
-              />
-            </td>
+            <template v-for="leaf in leaves" :key="leaf.key">
+              <td
+                v-if="!isSpanCovered(entry.row, leaf.key)"
+                class="k-table__cell"
+                :class="[
+                  leaf.column.classNames?.cell,
+                  isOverlayColumn(leaf.column) ? 'is-overlay-placeholder' : fixedClass(leaf.column, leaf.key),
+                  {
+                    'is-align-center': leaf.column.align === 'center',
+                    'is-align-right': leaf.column.align === 'right',
+                    'is-ellipsis': leaf.column.ellipsis,
+                    'is-span-edge': isSpanEdge(entry.row, leaf.key),
+                  },
+                ]"
+                :style="[
+                  isOverlayColumn(leaf.column) ? null : cellStyle(leaf.column, leaf.key),
+                  isOverlayColumn(leaf.column) ? null : pinnedCellStyle(entry),
+                  leaf.column.styles?.cell,
+                ]"
+                :aria-hidden="isOverlayColumn(leaf.column) ? 'true' : undefined"
+                :rowspan="spanRowSpan(entry.row, leaf.key)"
+                :colspan="spanColSpan(entry.row, leaf.key)"
+              >
+                <KBodyCellInner
+                  v-if="!isOverlayColumn(leaf.column)"
+                  :column="leaf.column"
+                  :row="entry.row"
+                  :index="entry.index"
+                />
+              </td>
+            </template>
           </tr>
           <tr
-            v-if="expandableEnabled && !entry.pinned && isExpanded(entry.row)"
+            v-if="expandableEnabled && inlineExpanded && !entry.pinned && isExpanded(entry.row)"
             class="k-table__expanded-row"
           >
             <td :colspan="columnSpan" class="k-table__cell k-table__expanded-cell">
-              <slot name="expanded" :row="entry.row" :index="entry.index" :row-key="rowKeyOf(entry.row)" />
+              <KExpandedContent :content="expandedContent(entry.row, entry.index)" />
             </td>
           </tr>
           </template>
@@ -279,6 +288,7 @@
           </tr>
         </tfoot>
       </table>
+      <template v-if="overlayEnabled">
       <div
         v-for="side in fixedSides"
         :key="`fixed-${side}`"
@@ -359,6 +369,9 @@
                 <tr v-if="item.height != null" class="k-table__virtual-spacer">
                   <td :colspan="fixedColCount(side)" :style="{ height: `${item.height}px` }"></td>
                 </tr>
+                <tr v-if="item.expanded" class="k-table__expanded-row is-overlay-spacer">
+                  <td :colspan="fixedColCount(side)" class="k-table__cell"></td>
+                </tr>
                 <template v-for="entry in (item.entry ? [item.entry] : [])" :key="`fixed-row-${side}-${item.key}`">
                 <tr
                   class="k-table__row"
@@ -421,26 +434,30 @@
                     />
                   </td>
                 </template>
-                  <td
-                    v-for="leaf in fixedLeavesOf(side)"
-                    :key="leaf.key"
-                    class="k-table__cell"
-                    :class="[
-                      leaf.column.classNames?.cell,
-                      side === 'left' ? 'is-fixed-left' : 'is-fixed-right',
-                      {
-                        'is-align-center': leaf.column.align === 'center',
-                        'is-align-right': leaf.column.align === 'right',
-                        'is-ellipsis': leaf.column.ellipsis,
-                      },
-                    ]"
-                    :style="[pinnedCellStyle(entry), leaf.column.styles?.cell]"
-                  >
-                    <KBodyCellInner :column="leaf.column" :row="entry.row" :index="entry.index" />
-                  </td>
+                  <template v-for="leaf in fixedLeavesOf(side)" :key="leaf.key">
+                    <td
+                      v-if="!isSpanCovered(entry.row, leaf.key)"
+                      class="k-table__cell"
+                      :class="[
+                        leaf.column.classNames?.cell,
+                        side === 'left' ? 'is-fixed-left' : 'is-fixed-right',
+                        {
+                          'is-align-center': leaf.column.align === 'center',
+                          'is-align-right': leaf.column.align === 'right',
+                          'is-ellipsis': leaf.column.ellipsis,
+                          'is-span-edge': isSpanEdge(entry.row, leaf.key),
+                        },
+                      ]"
+                      :style="[pinnedCellStyle(entry), leaf.column.styles?.cell]"
+                      :rowspan="spanRowSpan(entry.row, leaf.key)"
+                      :colspan="spanColSpan(entry.row, leaf.key)"
+                    >
+                      <KBodyCellInner :column="leaf.column" :row="entry.row" :index="entry.index" />
+                    </td>
+                  </template>
                 </tr>
                 <tr
-                  v-if="expandableEnabled && !entry.pinned && isExpanded(entry.row)"
+                  v-if="expandableEnabled && inlineExpanded && !entry.pinned && isExpanded(entry.row)"
                   class="k-table__expanded-row is-overlay-spacer"
                 >
                   <td :colspan="fixedColCount(side)" class="k-table__cell"></td>
@@ -456,6 +473,7 @@
           </tfoot>
         </table>
       </div>
+      </template>
       </div>
       <div v-if="loading" class="k-table__loading" :class="classNames?.loading" :style="styles?.loading" role="status" aria-label="加载中">
         <KSpin />
@@ -466,7 +484,7 @@
         v-model:current="current"
         v-model:page-size="perPage"
         :total="paginationTotal"
-        :size="size === 'sm' ? 'sm' : 'md'"
+        :size="paginationSize"
         :page-size-options="paginationConfig.pageSizeOptions"
         :show-size-changer="paginationConfig.showSizeChanger"
         :show-quick-jumper="paginationConfig.showQuickJumper"
@@ -503,15 +521,22 @@ import KPagination from '../Pagination/Pagination.vue';
 import KOverflowTooltip from './OverflowTooltip.vue';
 import { useTableColumns } from '../../composables/table/useTableColumns';
 import {
+  buildSpanPlan,
   distributeIntegerWidths,
   filterRows,
   getCellValue,
   getRowKey,
   paginateRows,
   sortRows,
+  spanCellKey,
   widthStyle,
 } from '../../utils/table';
-import { getVirtualRange } from '../../utils/virtual';
+import {
+  buildVirtualOffsets,
+  expandRangeForSpans,
+  findRowAtOffset,
+  getVariableVirtualRange,
+} from '../../utils/virtual';
 import type {
   KTableColumn,
   KTableFilterState,
@@ -519,6 +544,9 @@ import type {
   KTableLeaf,
   KTableRowKey,
   KTableSortState,
+  KTableSpanCell,
+  KTableSpanMethod,
+  KTableSpanPlan,
 } from '../../utils/table';
 
 defineOptions({ name: 'KTable' });
@@ -534,7 +562,19 @@ export type {
   KTableCellContext,
   KTableLeaf,
   KTableHeaderCell,
+  KTableCellSpan,
+  KTableSpanContext,
+  KTableSpanMethod,
 } from '../../utils/table';
+
+export type KTableExpandedPlacement = 'inline' | 'bottom';
+
+export interface KTableExpandedRenderContext<T = unknown> {
+  row: T;
+  /** dataSource 下标 */
+  index: number;
+  rowKey: KTableRowKey;
+}
 
 export interface KTablePaginationConfig {
   pageSizeOptions?: number[];
@@ -542,6 +582,8 @@ export interface KTablePaginationConfig {
   showQuickJumper?: boolean;
   showTotal?: boolean | ((total: number, range: [number, number]) => string);
   hideOnSinglePage?: boolean;
+  /** 分页器尺寸；缺省跟随表格 size：sm→sm、md→md、lg→lg */
+  size?: 'sm' | 'md' | 'lg';
 }
 
 export type KTablePaginationPosition =
@@ -597,6 +639,8 @@ interface KTableProps<T> {
   virtual?: boolean;
   /** 显式指定虚拟行高（px）；内容撑高或行高不一致时仍会自动退回全量渲染 */
   virtualRowHeight?: number;
+  /** 单元格合并：返回 rowSpan / colSpan；colSpan 保留虚拟，rowSpan 自动关闭虚拟 */
+  spanMethod?: KTableSpanMethod<T>;
   /** 受控排序；不传走内部状态 */
   sortState?: KTableSortState | null;
   /** 受控筛选；不传走内部状态 */
@@ -609,6 +653,10 @@ interface KTableProps<T> {
   defaultExpandAll?: boolean;
   /** 指定行是否可展开 */
   rowExpandable?: (row: T) => boolean;
+  /** 展开内容位置：inline 紧随该行（默认）；bottom 追加到合并组末尾整行 */
+  expandedPlacement?: KTableExpandedPlacement;
+  /** 展开内容渲染函数；某行返回 undefined 时回退 #expanded 插槽（null 视为空内容） */
+  expandedRender?: (context: KTableExpandedRenderContext<T>) => VNodeChild;
   classNames?: Partial<Record<TablePart, string>>;
   styles?: Partial<Record<TablePart, CSSProperties>>;
 }
@@ -631,8 +679,11 @@ const props = withDefaults(defineProps<KTableProps<T>>(), {
   expandable: true,
   defaultExpandAll: false,
   rowExpandable: undefined,
+  expandedPlacement: 'inline',
+  expandedRender: undefined,
   virtual: false,
   virtualRowHeight: undefined,
+  spanMethod: undefined,
 });
 
 const emit = defineEmits<{
@@ -658,6 +709,17 @@ const columnVisibility = defineModel<Record<string, boolean>>('columnVisibility'
 const rootAttrs = { 'data-part': 'root' };
 const filterOpen = reactive<Record<string, boolean>>({});
 const slots = useSlots();
+
+/** 展开内容：expandedRender 逐行优先，返回 undefined 的行回退 #expanded 插槽（null 视为空内容） */
+function expandedContent(row: T, index: number): VNodeChild {
+  const rowKey = rowKeyOf(row);
+  if (props.expandedRender) {
+    const content = props.expandedRender({ row, index, rowKey });
+    if (content !== undefined) return content;
+  }
+  if (slots.expanded) return slots.expanded({ row, index, rowKey });
+  return null;
+}
 
 const {
   allLeaves,
@@ -687,11 +749,14 @@ const showBottomPagination = computed(
 const paginationConfig = computed<KTablePaginationConfig>(() =>
   props.pagination === false ? {} : props.pagination,
 );
+const paginationSize = computed<'sm' | 'md' | 'lg'>(
+  () => paginationConfig.value.size ?? props.size,
+);
 const selectionEnabled = computed(() => Boolean(props.rowSelection));
 const selectionType = computed(() => props.rowSelection?.type ?? 'checkbox');
 const selectionName = `k-table-selection-${useId()}`;
 const expandableEnabled = computed(
-  () => props.expandable !== false && Boolean(slots.expanded),
+  () => props.expandable !== false && Boolean(slots.expanded || props.expandedRender),
 );
 const expandedSet = computed(() => new Set(expandedRowKeys.value));
 const pinnedTopKeys = computed(() => new Set(rowPinning.value?.top ?? []));
@@ -774,6 +839,101 @@ const pageRows = computed(() =>
 );
 const paginationTotal = computed(() => unpinnedRows.value.length);
 
+/* ---------- 单元格合并：colSpan 保留虚拟；rowSpan / 跨固定区 / 展开行各有降级 ---------- */
+const EMPTY_SPAN_PLAN: KTableSpanPlan = {
+  cells: new Map(),
+  covered: new Set(),
+  hasRowSpan: false,
+  crossesFixedRegion: false,
+};
+const spanPlan = computed<KTableSpanPlan>(() => {
+  if (!props.spanMethod) return EMPTY_SPAN_PLAN;
+  return buildSpanPlan({
+    rows: pageRows.value,
+    leaves: leaves.value,
+    keyOfRow: row => rowKeyOf(row),
+    spanMethod: props.spanMethod,
+  });
+});
+/** 合并场景下展开内容挂到所属合并组底部；无合并时保持原有行内展开 */
+const bottomExpanded = computed(
+  () =>
+    Boolean(props.spanMethod) &&
+    (props.expandedPlacement === 'bottom' || spanPlan.value.hasRowSpan),
+);
+const inlineExpanded = computed(() => !bottomExpanded.value);
+let bottomFallbackWarned = false;
+watch(
+  () => props.expandedPlacement === 'bottom' && !props.spanMethod,
+  unused => {
+    if (!unused || bottomFallbackWarned) return;
+    if (!(import.meta as { env?: { DEV?: boolean } }).env?.DEV) return;
+    bottomFallbackWarned = true;
+    console.warn(
+      '[KTable] expandedPlacement="bottom" 仅在启用 spanMethod 时生效；未检测到合并，已按 inline 渲染。',
+    );
+  },
+  { immediate: true },
+);
+let inlineSpanWarned = false;
+watch(
+  () =>
+    Boolean(props.spanMethod) &&
+    spanPlan.value.hasRowSpan &&
+    props.expandedPlacement !== 'bottom' &&
+    expandedSet.value.size > 0,
+  auto => {
+    if (!auto || inlineSpanWarned) return;
+    if (!(import.meta as { env?: { DEV?: boolean } }).env?.DEV) return;
+    inlineSpanWarned = true;
+    console.warn(
+      '[KTable] 检测到 rowSpan 合并：展开内容已自动追加到所属合并组底部，避免打断合并。',
+    );
+  },
+  { immediate: true },
+);
+function isSpanCovered(row: T, leafKey: string) {
+  const plan = spanPlan.value;
+  if (!plan.covered.size) return false;
+  return plan.covered.has(spanCellKey(rowKeyOf(row), leafKey));
+}
+function spanOf(row: T, leafKey: string): KTableSpanCell | undefined {
+  const plan = spanPlan.value;
+  if (!plan.cells.size) return undefined;
+  return plan.cells.get(spanCellKey(rowKeyOf(row), leafKey));
+}
+function spanRowSpan(row: T, leafKey: string) {
+  const span = spanOf(row, leafKey);
+  return span && span.rowSpan > 1 ? span.rowSpan : undefined;
+}
+function spanColSpan(row: T, leafKey: string) {
+  const span = spanOf(row, leafKey);
+  return span && span.colSpan > 1 ? span.colSpan : undefined;
+}
+/** 本行前面的叶子都被合并覆盖时，这个首格拿不到“前一个兄弟”的左边框 */
+function isSpanEdge(row: T, leafKey: string) {
+  if (!spanPlan.value.covered.size) return false;
+  const index = leafIndex(leafKey);
+  if (index <= 0) return false;
+  for (let cursor = 0; cursor < index; cursor++) {
+    if (!isSpanCovered(row, leaves.value[cursor].key)) return false;
+  }
+  return true;
+}
+const isDevEnv = () => Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
+let spanStickyWarned = false;
+watch(
+  () => spanPlan.value.crossesFixedRegion,
+  crosses => {
+    if (!crosses || spanStickyWarned || !isDevEnv()) return;
+    spanStickyWarned = true;
+    console.warn(
+      '[KTable] 合并跨了左右固定区与中区：浮层无法承载，已退回粘性单元格模式（固定列抗抖动与性能会相应回退）。',
+    );
+  },
+  { immediate: true },
+);
+
 interface KTableBodyRow<T> {
   row: T;
   pinned: 'top' | 'bottom' | null;
@@ -802,30 +962,72 @@ const bodyRows = computed<KTableBodyRow<T>[]>(() => [
   })),
 ]);
 
-/* ---------- 虚拟滚动：主体与左右浮层共用同一窗口 ---------- */
+/* ---------- 虚拟滚动：变量行高（实测缓存 + 前缀和）+ 共用窗口 ---------- */
 interface KTableRenderEntry<T> {
   key: string;
   entry?: KTableBodyRow<T>;
+  /** 置底展开行：整行跨全部列，与 entry 互斥 */
+  expanded?: KTableBodyRow<T>;
   height?: number;
 }
+/** 未测量行的估算高度；实测后以缓存为准 */
 const virtualRowHeight = ref(48);
-watch(
-  () => props.virtualRowHeight,
-  value => {
-    if (typeof value === 'number' && value > 0) virtualRowHeight.value = value;
-  },
-  { immediate: true },
-);
 const virtualStart = ref(0);
 const virtualEnd = ref(0);
-const virtualBroken = ref(false);
-let virtualWarned = false;
-const virtualActive = computed(
-  () => props.virtual && expandedSet.value.size === 0 && !virtualBroken.value,
-);
+const virtualActive = computed(() => props.virtual && expandedSet.value.size === 0);
 const virtualEnabled = computed(() => virtualActive.value && pageRows.value.length > 40);
 const pinnedTopHeight = ref(0);
 const pinnedBottomHeight = ref(0);
+/** 实测行高缓存按行 key 存，排序/筛选/换页都不失效 */
+const rowHeightCache = new Map<string, number>();
+const virtualOffsets = ref<number[]>([]);
+let offsetSignature = '';
+function rowCacheKey(row: T) {
+  return String(rowKeyOf(row));
+}
+const pageKeySignature = computed(() => pageRows.value.map(rowCacheKey).join('\u0001'));
+function rebuildVirtualOffsets() {
+  const heights = pageRows.value.map(row => rowHeightCache.get(rowCacheKey(row)));
+  virtualOffsets.value = buildVirtualOffsets(heights, pageRows.value.length, virtualRowHeight.value)
+    .offsets;
+}
+function ensureVirtualOffsets() {
+  const signature = pageKeySignature.value;
+  if (signature !== offsetSignature) {
+    offsetSignature = signature;
+    rebuildVirtualOffsets();
+  }
+  return virtualOffsets.value;
+}
+watch(
+  () => props.virtualRowHeight,
+  value => {
+    if (typeof value === 'number' && value > 0) {
+      virtualRowHeight.value = value;
+      offsetSignature = '';
+      /* 测量依赖模板 ref，放到 setup 之后 */
+      nextTick(() => updateVirtualWindow());
+    }
+  },
+  { immediate: true },
+);
+/** 组底展开：按合并组的覆盖末行分组，展开内容追加到所属组末尾 */
+const expandedBottomMap = computed<Map<number, KTableRenderEntry<T>[]>>(() => {
+  const map = new Map<number, KTableRenderEntry<T>[]>();
+  if (!bottomExpanded.value || expandedSet.value.size === 0) return map;
+  const plan = spanPlan.value;
+  pageRows.value.forEach((row, index) => {
+    if (!expandedSet.value.has(rowKeyOf(row))) return;
+    const groupEnd = plan.rowCoverEnd[index] ?? index;
+    const list = map.get(groupEnd) ?? [];
+    list.push({
+      key: `expanded-${index}-${rowKeyOf(row)}`,
+      expanded: { row, pinned: null, pinIndex: -1, index: rowIndexAt(index) },
+    });
+    map.set(groupEnd, list);
+  });
+  return map;
+});
 const renderEntries = computed<KTableRenderEntry<T>[]>(() => {
   const center = bodyRows.value.slice(
     pinnedTopRows.value.length,
@@ -835,19 +1037,23 @@ const renderEntries = computed<KTableRenderEntry<T>[]>(() => {
     .slice(0, pinnedTopRows.value.length)
     .map(entry => ({ key: `top-${rowKeyOf(entry.row)}`, entry }));
   if (virtualEnabled.value) {
-    if (virtualStart.value > 0) {
-      entries.push({ key: 'virtual-top', height: virtualStart.value * virtualRowHeight.value });
-    }
+    const offsets = virtualOffsets.value;
+    const total = offsets[center.length] ?? center.length * virtualRowHeight.value;
+    const top = offsets[virtualStart.value] ?? 0;
+    if (top > 0) entries.push({ key: 'virtual-top', height: top });
     for (let index = virtualStart.value; index < virtualEnd.value; index++) {
       const entry = center[index];
       if (entry) entries.push({ key: `row-${rowKeyOf(entry.row)}`, entry });
     }
-    const rest = center.length - virtualEnd.value;
-    if (rest > 0) {
-      entries.push({ key: 'virtual-bottom', height: rest * virtualRowHeight.value });
-    }
+    const bottom = total - (offsets[virtualEnd.value] ?? total);
+    if (bottom > 0) entries.push({ key: 'virtual-bottom', height: bottom });
   } else {
-    for (const entry of center) entries.push({ key: `row-${rowKeyOf(entry.row)}`, entry });
+    const groupExtras = expandedBottomMap.value;
+    center.forEach((entry, index) => {
+      entries.push({ key: `row-${rowKeyOf(entry.row)}`, entry });
+      const extras = groupExtras.get(index);
+      if (extras) entries.push(...extras);
+    });
   }
   for (const entry of bodyRows.value.slice(pinnedTopRows.value.length + pageRows.value.length)) {
     entries.push({ key: `bottom-${rowKeyOf(entry.row)}`, entry });
@@ -855,70 +1061,100 @@ const renderEntries = computed<KTableRenderEntry<T>[]>(() => {
   return entries;
 });
 function updateVirtualWindow() {
+  const count = pageRows.value.length;
   if (!virtualEnabled.value) {
     if (virtualStart.value !== 0) virtualStart.value = 0;
-    if (virtualEnd.value !== pageRows.value.length) virtualEnd.value = pageRows.value.length;
+    if (virtualEnd.value !== count) virtualEnd.value = count;
     return;
   }
   const wrap = wrapEl.value;
   if (!wrap) return;
+  const offsets = ensureVirtualOffsets();
   const viewport = Math.max(
     0,
     wrap.clientHeight - headerHeight.value - pinnedTopHeight.value - pinnedBottomHeight.value,
   );
-  const range = getVirtualRange(
-    wrap.scrollTop,
-    viewport,
-    virtualRowHeight.value,
-    pageRows.value.length,
-    6,
-  );
-  /* 缓冲区：只有滚出当前窗口的缓冲带才重算，避免每帧重建行 */
+  const range = getVariableVirtualRange(wrap.scrollTop, viewport, offsets, 6);
+  let start = range.start;
+  let end = range.end;
+  /* 合并格必须整块渲染：窗口上探到起点行、下探到覆盖末行 */
+  const plan = spanPlan.value;
+  if (plan.cells.size && plan.rowOrigin.length === count) {
+    const expanded = expandRangeForSpans(start, end, plan.rowOrigin, plan.rowCoverEnd, count);
+    start = expanded.start;
+    end = expanded.end;
+  }
+  /* 缓冲区：滚出当前窗口的缓冲带才重算，避免每帧重建行 */
   const buffer = 3 * virtualRowHeight.value;
   const insideWindow =
     virtualStart.value > 0 &&
-    virtualEnd.value < pageRows.value.length &&
-    wrap.scrollTop > virtualStart.value * virtualRowHeight.value + buffer &&
-    wrap.scrollTop + viewport < virtualEnd.value * virtualRowHeight.value - buffer;
+    virtualEnd.value < count &&
+    wrap.scrollTop > (offsets[virtualStart.value + 1] ?? 0) + buffer &&
+    wrap.scrollTop + viewport < (offsets[virtualEnd.value] ?? 0) - buffer;
   if (insideWindow) return;
-  if (range.start !== virtualStart.value) virtualStart.value = range.start;
-  if (range.end !== virtualEnd.value) virtualEnd.value = range.end;
+  if (start !== virtualStart.value) virtualStart.value = start;
+  if (end !== virtualEnd.value) virtualEnd.value = end;
 }
-/** 校验窗口内所有已渲染行：等行高才维持虚拟；任何一行被内容撑高就退回全量渲染 */
-function measureVirtualRow() {
+/** 测量窗口内数据行，更新缓存与前缀和；高度变化时做滚动锚定，避免内容跳动 */
+function measureVirtualHeights() {
   const table = tableEl.value;
   if (!table || !virtualEnabled.value) return;
   const rows = table.querySelectorAll<HTMLElement>(
     ':scope > tbody > tr.k-table__row:not(.is-pinned-top):not(.is-pinned-bottom)',
   );
   if (!rows.length) return;
-  const heights: number[] = [];
+  let changed = false;
   rows.forEach(row => {
+    const key = row.dataset.rowKey;
+    if (key == null) return;
     const height = row.getBoundingClientRect().height;
-    if (height > 0) heights.push(height);
-  });
-  if (!heights.length) return;
-  const min = Math.min(...heights);
-  const max = Math.max(...heights);
-  const expected =
-    typeof props.virtualRowHeight === 'number' && props.virtualRowHeight > 0
-      ? props.virtualRowHeight
-      : virtualRowHeight.value;
-  if (max - min > 1 || Math.abs(min - expected) > 1) {
-    virtualBroken.value = true;
-    if (!virtualWarned && (import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
-      virtualWarned = true;
-      console.warn(
-        '[KTable] 已退回全量渲染：检测到行高不一致（内容换行/撑高）。可给文本列开启 ellipsis / ellipsisTooltip 保持单行，或显式设置 virtualRowHeight。',
-      );
+    if (!(height > 0)) return;
+    const cached = rowHeightCache.get(key);
+    if (cached == null || Math.abs(cached - height) > 0.5) {
+      rowHeightCache.set(key, height);
+      changed = true;
     }
-    return;
+  });
+  if (!changed) return;
+  /* 未显式给估算行高时，用已测行的平均值修正，避免滚动条总高大幅漂移 */
+  if (typeof props.virtualRowHeight !== 'number' && rowHeightCache.size >= 8) {
+    let sum = 0;
+    rowHeightCache.forEach(height => (sum += height));
+    const average = Math.round(sum / rowHeightCache.size);
+    if (Math.abs(average - virtualRowHeight.value) > 2) virtualRowHeight.value = average;
   }
-  if (typeof props.virtualRowHeight !== 'number' && Math.abs(min - virtualRowHeight.value) > 0.5) {
-    virtualRowHeight.value = min;
+  const wrap = wrapEl.value;
+  const offsets = virtualOffsets.value;
+  const hasAnchor = Boolean(wrap && offsets.length === pageRows.value.length + 1);
+  const anchorIndex = hasAnchor && wrap ? findRowAtOffset(offsets, wrap.scrollTop) : 0;
+  const anchorDelta = hasAnchor && wrap ? wrap.scrollTop - offsets[anchorIndex] : 0;
+  rebuildVirtualOffsets();
+  offsetSignature = pageKeySignature.value;
+  const anchorTop = virtualOffsets.value[anchorIndex];
+  if (hasAnchor && wrap && anchorTop != null) {
+    const target = anchorTop + anchorDelta;
+    /* 占位高度下一帧才生效，补偿滚动放到 DOM 更新之后 */
+    nextTick(() => {
+      if (!virtualEnabled.value) return;
+      if (Math.abs(wrap.scrollTop - target) > 0.5) wrap.scrollTop = target;
+    });
   }
   updateVirtualWindow();
 }
+/* post flush：窗口换行的 DOM 更新完成后、绘制前测量并同步行高；
+   带 rowSpan 的浮层行会自然排版成 49px、主体 48px，若等下一帧再同步，快速滚动时逐行错开 */
+watch(
+  [virtualStart, virtualEnd],
+  () => {
+    if (!virtualEnabled.value) return;
+    measureVirtualHeights();
+    syncFixedLayers();
+    /* 浮层用 marginTop:-tableHeight 与主表对齐；换窗后真实表高已变，
+       必须同帧刷新，否则整块浮层会上下偏几像素 */
+    tableHeight.value = tableEl.value?.getBoundingClientRect().height ?? 0;
+  },
+  { flush: 'post' },
+);
 
 const leadingWidth = computed(
   () => (expandableEnabled.value ? 44 : 0) + (selectionEnabled.value ? 44 : 0),
@@ -1122,7 +1358,8 @@ function measureLayout() {
     quantizeColumnWidths();
     measurePinnedRows();
     syncFixedLayers();
-    measureVirtualRow();
+    updateVirtualWindow();
+    measureVirtualHeights();
     tableHeight.value = tableEl.value?.getBoundingClientRect().height ?? 0;
     const wrap = wrapEl.value;
     if (wrap) {
@@ -1189,7 +1426,6 @@ watch(
     () => props.scroll?.y,
   ],
   async () => {
-    virtualBroken.value = false;
     await nextTick();
     measureLayout();
   },
@@ -1272,7 +1508,8 @@ const overlayEnabled = computed(
   () =>
     typeof props.scroll?.x === 'number' &&
     fixedSides.value.length > 0 &&
-    overlayGroupsConsistent.value,
+    overlayGroupsConsistent.value &&
+    !spanPlan.value.crossesFixedRegion,
 );
 /** 左浮层存在时，展开/选择列也并入浮层，主表不再保留粘性体单元格 */
 const leadingInOverlay = computed(() => overlayEnabled.value && leftFixedLeaves.value.length > 0);
@@ -1569,6 +1806,17 @@ const KCellContent = defineComponent({
       }
       return h('span', value == null ? '' : String(value));
     };
+  },
+});
+
+/** 展开内容壳：插槽或 expandedRender 产出的 VNode 直接渲染 */
+const KExpandedContent = defineComponent({
+  name: 'KTableExpandedContent',
+  props: {
+    content: { type: null, default: null },
+  },
+  setup(contentProps) {
+    return () => contentProps.content as VNodeChild;
   },
 });
 
@@ -1898,6 +2146,8 @@ defineSlots<{
   background-color: var(--k-color-bg-container);
   text-align: start;
   vertical-align: middle;
+  /* 无空格长串（邮箱/URL）在单元格内换行，避免压到相邻列；break-word 不影响自动布局列的最小宽度 */
+  overflow-wrap: break-word;
 }
 /* 行分隔线用背景绘制而不是真边框：行高保持偶数，单元格内容落在整像素，
    跨行表头纵向居中也才不会出现 0.5px，滚动重绘时不上下跳 */
@@ -2044,6 +2294,10 @@ defineSlots<{
 }
 /* 右浮层首列要补与主表一致的分隔线；左浮层由相邻选择/展开列自然产生 */
 .k-table.is-column-borders .k-table__fixed-layer.is-right .k-table__cell:first-child {
+  border-inline-start: var(--k-line-width) solid var(--k-table-border);
+}
+/* 行首若干列被合并覆盖后，本行首格没有“前一个兄弟”，补回纵向分隔线 */
+.k-table.is-column-borders .k-table__cell.is-span-edge {
   border-inline-start: var(--k-line-width) solid var(--k-table-border);
 }
 .k-table.is-sticky .k-table__cell--head {
@@ -2244,5 +2498,20 @@ defineSlots<{
 .k-table--lg {
   --k-table-cell-padding-y: 16px;
   --k-table-cell-padding-x: var(--k-size-md);
+}
+/* 浮层占位行（含合并组尾展开行）只负责等高：行与单元格都不画底色、分隔线，避免把跨全部列的整行切碎。
+   行级透明必须显式写：宿主站点 .vp-doc tr 的条纹背景会盖住下方的整行展开内容 */
+.k-table .k-table__fixed-layer .is-overlay-spacer {
+  border: 0;
+  background: transparent;
+  background-image: none;
+}
+.k-table .k-table__fixed-layer .is-overlay-spacer > .k-table__cell,
+.k-table.is-column-borders .k-table__fixed-layer.is-left .is-overlay-spacer > .k-table__cell,
+.k-table.is-column-borders .k-table__fixed-layer.is-right .is-overlay-spacer > .k-table__cell {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  background-image: none;
 }
 </style>

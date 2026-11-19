@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildHeaderRows,
+  buildSpanPlan,
   columnKeyOf,
   computeFixedOffsets,
   distributeIntegerWidths,
@@ -12,10 +13,17 @@ import {
   getRowKey,
   paginateRows,
   sortRows,
+  spanCellKey,
 } from '../utils/table.ts';
 import type { KTableColumn } from '../utils/table.ts';
 import { buildPageItems, clampPage, totalPagesOf } from '../utils/pagination.ts';
-import { getVirtualRange } from '../utils/virtual.ts';
+import {
+  buildVirtualOffsets,
+  expandRangeForSpans,
+  findRowAtOffset,
+  getVariableVirtualRange,
+  getVirtualRange,
+} from '../utils/virtual.ts';
 
 interface Row extends Record<string, unknown> {
   id: number;
@@ -207,6 +215,57 @@ test('pagination items stay within bounds with ellipsis', () => {
   assert.equal(totalPagesOf(21, 10), 3);
 });
 
+test('virtual offsets mix measured heights with the estimate', () => {
+  const { offsets, total } = buildVirtualOffsets([50, undefined, 70], 3, 40);
+  assert.deepEqual(offsets, [0, 50, 90, 160]);
+  assert.equal(total, 160);
+  assert.deepEqual(buildVirtualOffsets([], 0, 40).offsets, [0]);
+  assert.deepEqual(buildVirtualOffsets([0, -3], 2, 10).offsets, [0, 10, 20]);
+});
+
+test('findRowAtOffset hits row boundaries and clamps', () => {
+  const offsets = [0, 50, 90, 160];
+  assert.equal(findRowAtOffset(offsets, 0), 0);
+  assert.equal(findRowAtOffset(offsets, 49), 0);
+  assert.equal(findRowAtOffset(offsets, 50), 1);
+  assert.equal(findRowAtOffset(offsets, 89), 1);
+  assert.equal(findRowAtOffset(offsets, 90), 2);
+  assert.equal(findRowAtOffset(offsets, 500), 2);
+  assert.equal(findRowAtOffset([0], 100), 0);
+});
+
+test('variable range derives rows from offsets with overscan', () => {
+  const { offsets } = buildVirtualOffsets(Array.from({ length: 100 }, () => 50), 100, 50);
+  const range = getVariableVirtualRange(500, 300, offsets, 2);
+  assert.equal(range.start, 8);
+  assert.equal(range.end, 18);
+  assert.equal(range.totalHeight, 5000);
+  assert.equal(range.offsetTop, 400);
+  assert.deepEqual(getVariableVirtualRange(0, 300, [0], 2), {
+    start: 0,
+    end: 0,
+    totalHeight: 0,
+    offsetTop: 0,
+  });
+});
+
+test('range expansion covers spans crossing both window edges', () => {
+  const count = 10;
+  const identity = Array.from({ length: count }, (_, index) => index);
+  const origin = [...identity];
+  const coverEnd = [...identity];
+  origin[1] = 0;
+  origin[2] = 0;
+  coverEnd[0] = 2;
+  coverEnd[1] = 2;
+  coverEnd[2] = 2;
+  assert.deepEqual(expandRangeForSpans(2, 5, origin, coverEnd, count), { start: 0, end: 5 });
+  coverEnd[4] = 6;
+  assert.deepEqual(expandRangeForSpans(4, 5, identity, coverEnd, count), { start: 4, end: 7 });
+  coverEnd[8] = 999;
+  assert.deepEqual(expandRangeForSpans(8, 9, identity, coverEnd, count), { start: 8, end: 10 });
+});
+
 test('virtual range covers viewport with overscan', () => {
   assert.deepEqual(getVirtualRange(0, 300, 50, 1000, 2), {
     start: 0,
@@ -235,4 +294,120 @@ test('distributeIntegerWidths splits equally when no usable widths are given', (
   const result = distributeIntegerWidths({ a: 0, b: 0, c: 0 }, 100);
   assert.deepEqual(result, { a: 34, b: 33, c: 33 });
   assert.equal(Object.values(distributeIntegerWidths({ a: 0 }, 0)).reduce((sum, v) => sum + v, 0), 1);
+});
+
+test('span plan merges rowSpan and skips covered cells', () => {
+  const leaves = flattenLeafColumns(columns);
+  const plan = buildSpanPlan({
+    rows,
+    leaves,
+    keyOfRow: row => row.id,
+    spanMethod: ({ rowIndex, columnIndex }) =>
+      rowIndex === 0 && columnIndex === 0 ? { rowSpan: 2 } : undefined,
+  });
+  assert.equal(plan.hasRowSpan, true);
+  assert.equal(plan.crossesFixedRegion, false);
+  assert.deepEqual(plan.cells.get(spanCellKey(1, 'name')), { rowSpan: 2, colSpan: 1 });
+  assert.equal(plan.covered.has(spanCellKey(2, 'name')), true);
+  assert.equal(plan.covered.size, 1);
+  assert.deepEqual(plan.rowOrigin, [0, 0, 2]);
+  assert.deepEqual(plan.rowCoverEnd, [1, 1, 2]);
+});
+
+test('span plan merges colSpan without flagging rowSpan', () => {
+  const leaves = flattenLeafColumns(columns);
+  const plan = buildSpanPlan({
+    rows,
+    leaves,
+    keyOfRow: row => row.id,
+    spanMethod: ({ rowIndex, columnIndex }) =>
+      rowIndex === 0 && columnIndex === 0 ? { colSpan: 2 } : undefined,
+  });
+  assert.equal(plan.hasRowSpan, false);
+  assert.deepEqual(plan.cells.get(spanCellKey(1, 'name')), { rowSpan: 1, colSpan: 2 });
+  assert.deepEqual([...plan.covered], [spanCellKey(1, 'score')]);
+});
+
+test('span plan clamps invalid spans instead of overflowing', () => {
+  const leaves = flattenLeafColumns(columns);
+  const plan = buildSpanPlan({
+    rows,
+    leaves,
+    keyOfRow: row => row.id,
+    spanMethod: ({ rowIndex, columnIndex }) =>
+      rowIndex === 2 && columnIndex === 0 ? { rowSpan: 99, colSpan: 0 } : undefined,
+  });
+  assert.equal(plan.cells.size, 0);
+  assert.equal(plan.covered.size, 0);
+  assert.equal(plan.hasRowSpan, false);
+});
+
+test('span plan shrinks spans that would overlap an existing merge', () => {
+  const leaves = flattenLeafColumns(columns);
+  const plan = buildSpanPlan({
+    rows,
+    leaves,
+    keyOfRow: row => row.id,
+    spanMethod: ({ rowIndex, columnIndex }) => {
+      if (rowIndex === 0 && columnIndex === 2) return { rowSpan: 2 };
+      if (rowIndex === 1 && columnIndex === 1) return { rowSpan: 2, colSpan: 2 };
+      return undefined;
+    },
+  });
+  assert.deepEqual(plan.cells.get(spanCellKey(2, 'score')), { rowSpan: 2, colSpan: 1 });
+  assert.equal(plan.covered.has(spanCellKey(2, 'team')), true);
+  assert.equal(plan.covered.has(spanCellKey(3, 'score')), true);
+});
+
+test('span plan flags merges crossing the fixed region boundary', () => {
+  const leaves = flattenLeafColumns([
+    { key: 'name', dataIndex: 'name', title: '名称', fixed: 'left' },
+    { key: 'score', dataIndex: 'score', title: '分数' },
+    { key: 'team', dataIndex: 'team.title', title: '团队', fixed: 'right' },
+  ]);
+  const same = buildSpanPlan({
+    rows,
+    leaves,
+    keyOfRow: row => row.id,
+    spanMethod: ({ rowIndex, columnIndex }) =>
+      rowIndex === 0 && columnIndex === 1 ? { colSpan: 1 } : undefined,
+  });
+  assert.equal(same.crossesFixedRegion, false);
+  const crossing = buildSpanPlan({
+    rows,
+    leaves,
+    keyOfRow: row => row.id,
+    spanMethod: ({ rowIndex, columnIndex }) =>
+      rowIndex === 0 && columnIndex === 0 ? { colSpan: 2 } : undefined,
+  });
+  assert.equal(crossing.crossesFixedRegion, true);
+  assert.deepEqual(crossing.cells.get(spanCellKey(1, 'name')), { rowSpan: 1, colSpan: 2 });
+});
+
+test('span plan forwards row and column context and stays empty without a method', () => {
+  const leaves = flattenLeafColumns(columns);
+  const seen: Array<[number, number, string]> = [];
+  buildSpanPlan({
+    rows,
+    leaves,
+    keyOfRow: row => row.id,
+    spanMethod: ({ row, rowIndex, column, columnIndex }) => {
+      seen.push([rowIndex, columnIndex, String(column.key)]);
+      return undefined;
+    },
+  });
+  assert.deepEqual(seen, [
+    [0, 0, 'name'],
+    [0, 1, 'score'],
+    [0, 2, 'team'],
+    [1, 0, 'name'],
+    [1, 1, 'score'],
+    [1, 2, 'team'],
+    [2, 0, 'name'],
+    [2, 1, 'score'],
+    [2, 2, 'team'],
+  ]);
+  const empty = buildSpanPlan({ rows, leaves, keyOfRow: row => row.id });
+  assert.equal(empty.cells.size, 0);
+  assert.equal(empty.covered.size, 0);
 });
