@@ -6,6 +6,7 @@
   <ModalHolder :svc="modalSvc" />
   <MessageHolder :svc="messageSvc" />
   <NotificationHolder :svc="notificationSvc" />
+  <DrawerHolder :svc="drawerSvc" />
 </template>
 
 <script setup lang="ts">
@@ -18,6 +19,8 @@ import { createMessageService } from '../Message/service';
 import MessageHolder from '../Message/MessageHolder.vue';
 import { createNotificationService } from '../Notification/service';
 import NotificationHolder from '../Notification/NotificationHolder.vue';
+import { createDrawerService } from '../Drawer/service';
+import DrawerHolder from '../Drawer/DrawerHolder.vue';
 
 defineOptions({ name: 'KApp' });
 
@@ -36,11 +39,13 @@ const root = ref<HTMLElement>();
 const modalSvc = createModalService();
 const messageSvc = createMessageService();
 const notificationSvc = createNotificationService();
+const drawerSvc = createDrawerService();
 provideKApp({
   root,
   modal: modalSvc.api,
   message: messageSvc.api,
   notification: notificationSvc.api,
+  drawer: drawerSvc.api,
 });
 </script>
 

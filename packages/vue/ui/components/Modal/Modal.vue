@@ -78,22 +78,11 @@
 </template>
 
 <script lang="ts">
-/* 滚动锁模块计数：多模态叠层只由最后一个释放（普通 script 块 = 模块作用域） */
+/* 滚动锁与叠层栈：与 Drawer 共享，多弹层只由最后一个释放 / 最上层接管键盘 */
 import { installPointerRecorder } from '../../utils/interaction';
+import { lockBody, unlockBody } from '../../utils/scrollLock';
+import { isTopOverlay, pushOverlay, removeOverlay } from '../../utils/overlayStack';
 installPointerRecorder(); // 模块装载即挂 capture 记录器，早于任何首次点击（SSR 内部有守卫）
-/* 打开中的弹窗栈：叠层时只让最上层接管 Tab 循环与 Esc */
-const modalStack: HTMLElement[] = [];
-function pushModal(el: HTMLElement) {
-  removeModal(el);
-  modalStack.push(el);
-}
-function removeModal(el: HTMLElement) {
-  const i = modalStack.indexOf(el);
-  if (i >= 0) modalStack.splice(i, 1);
-}
-function isTopModal(el: HTMLElement | null) {
-  return !!el && modalStack[modalStack.length - 1] === el;
-}
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -114,18 +103,6 @@ function getFocusable(root: HTMLElement): HTMLElement[] {
   );
 }
 
-let bodyLockCount = 0;
-function lockBody() {
-  if (bodyLockCount++ === 0 && typeof document !== 'undefined') {
-    document.body.style.overflow = 'hidden';
-  }
-}
-function unlockBody() {
-  bodyLockCount = Math.max(0, bodyLockCount - 1);
-  if (bodyLockCount === 0 && typeof document !== 'undefined') {
-    document.body.style.overflow = '';
-  }
-}
 </script>
 
 <script setup lang="ts">
@@ -359,7 +336,7 @@ function trapTab(e: KeyboardEvent) {
   }
 }
 function onKeydown(e: KeyboardEvent) {
-  if (!isTopModal(dialogEl.value)) return; // 叠层时只由最上层接管
+  if (!isTopOverlay(dialogEl.value)) return; // 叠层时只由最上层接管
   if (e.key === 'Escape' && props.keyboard) {
     e.stopPropagation();
     requestClose(e);
@@ -387,13 +364,13 @@ watch(
       await nextTick(); // 等 is-zoomed 类落到 DOM（visibility:hidden 时 focus 无效）
       const dialog = dialogEl.value;
       if (dialog) {
-        pushModal(dialog);
+        pushOverlay(dialog);
         focusInitial(dialog);
       }
     } else {
       unlockBody();
       document.removeEventListener('keydown', onKeydown);
-      if (dialogEl.value) removeModal(dialogEl.value);
+      if (dialogEl.value) removeOverlay(dialogEl.value);
       // zoomed/zoomOrigin 留到 after-leave 复位：退场动画期间 dialog 仍需可见
     }
   },
@@ -412,7 +389,7 @@ function onAfterLeave() {
 onBeforeUnmount(() => {
   if (typeof document !== 'undefined') {
     document.removeEventListener('keydown', onKeydown);
-    if (dialogEl.value) removeModal(dialogEl.value);
+    if (dialogEl.value) removeOverlay(dialogEl.value);
     if (openState.value) unlockBody();
   }
 });

@@ -87,6 +87,7 @@ export { default as KMenu } from "./components/Menu/Menu.vue";
 export { default as KAffix } from "./components/Affix/Affix.vue";
 export { default as KBackTop } from "./components/BackTop/BackTop.vue";
 export { default as KAnchor } from "./components/Anchor/Anchor.vue";
+export { default as KDrawer } from "./components/Drawer/Drawer.vue";
 export { default as KNotification } from "./components/Notification/Notification.vue";
 export { default as KDatePicker } from "./components/DatePicker/DatePicker.vue";
 export { default as KDateRangePicker } from "./components/DateRangePicker/DateRangePicker.vue";
@@ -184,6 +185,16 @@ export type {
   KAnchorItem,
   KAnchorPart,
 } from "./components/Anchor/types";
+export type {
+  KDrawerApi,
+  KDrawerFuncProps,
+  KDrawerHandle,
+} from "./components/Drawer/service";
+export type {
+  KDrawerPart,
+  KDrawerPlacement,
+  KDrawerSize,
+} from "./components/Drawer/types";
 export type {
   KTableColumn,
   KTableFilterState,

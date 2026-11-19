@@ -3,6 +3,7 @@ import type { InjectionKey, Ref } from 'vue';
 import type { KModalApi } from '../components/Modal/service';
 import type { KMessageApi } from '../components/Message/service';
 import type { KNotificationApi } from '../components/Notification/service';
+import type { KDrawerApi } from '../components/Drawer/service';
 
 /**
  * KApp 注入面（规格 docs site /vue/ui/components/app.md）：
@@ -17,6 +18,7 @@ export interface KAppContext {
   message?: KMessageApi;
   notification?: KNotificationApi;
   modal?: KModalApi;
+  drawer?: KDrawerApi;
 }
 
 const K_APP_KEY: InjectionKey<KAppContext> = Symbol('k-app');
