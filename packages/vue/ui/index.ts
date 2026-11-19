@@ -69,6 +69,7 @@ export { default as KPopconfirm } from "./components/Popconfirm/Popconfirm.vue";
 export { default as KModal } from "./components/Modal/Modal.vue";
 export { default as KAlert } from "./components/Alert/Alert.vue";
 export { default as KSpin } from "./components/Spin/Spin.vue";
+export { default as KTag } from "./components/Tag/Tag.vue";
 export { default as KEmpty } from "./components/Empty/Empty.vue";
 export { default as KPagination } from "./components/Pagination/Pagination.vue";
 export { default as KTable } from "./components/Table/Table.vue";
@@ -118,6 +119,14 @@ export type { KInputNumberRenderScope } from "./components/InputNumber/InputNumb
 export type { KFormRenderScope } from "./components/Form/Form.vue";
 export type { KFormItemRenderScope } from "./components/Form/FormItem.vue";
 export type { KAlertRenderScope } from "./components/Alert/Alert.vue";
+export type {
+  KTagColor,
+  KTagPresetColor,
+  KTagVariant,
+  KTagSize,
+  KTagIconPosition,
+  KTagRenderScope,
+} from "./components/Tag/Tag.vue";
 export type {
   KTableColumn,
   KTableFilterState,
