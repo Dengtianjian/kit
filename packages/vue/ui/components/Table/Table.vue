@@ -27,6 +27,15 @@
       :style="styles?.toolbar"
     >
       <div class="k-table__toolbar-start">
+        <input
+          v-if="searchable"
+          class="k-table__search"
+          type="search"
+          :value="globalFilter"
+          :placeholder="searchPlaceholder"
+          aria-label="搜索表格"
+          @input="onSearchInput"
+        />
         <slot name="filter" :columns="leaves" :visibility="columnVisibility" />
       </div>
       <div class="k-table__toolbar-end">
@@ -138,12 +147,29 @@
                 :colspan="cell.colSpan > 1 ? cell.colSpan : undefined"
                 :rowspan="cell.rowSpan > 1 ? cell.rowSpan : undefined"
                 class="k-table__cell k-table__cell--head"
-                :class="[cell.column.classNames?.header, headerFixedClass(cell)]"
+                :class="[
+                  cell.column.classNames?.header,
+                  headerFixedClass(cell),
+                  {
+                    'is-draggable': columnDraggable && !cell.isGroup,
+                    'is-resizable': columnResizable && !cell.isGroup,
+                  },
+                ]"
                 :style="[headerCellStyle(cell, rowIndex), cell.column.styles?.header]"
                 :aria-sort="cell.isGroup ? undefined : ariaSort(cell.leafKey)"
                 :data-column-key="cell.isGroup ? undefined : cell.leafKey"
+                :title="columnDraggable && !cell.isGroup ? '拖动调整列顺序' : undefined"
+                @pointerdown="onHeaderPointerDown(cell, $event)"
+                @dblclick="onHeaderDblClick($event)"
               >
-                <KHeadCell :cell="cell" />
+                <KHeadCell :cell="cell" :show-grip="columnDraggable && !cell.isGroup" />
+                <span
+                  v-if="columnResizable && !cell.isGroup"
+                  class="k-table__resize"
+                  aria-hidden="true"
+                  @pointerdown.stop.prevent="onResizeStart(cell.leafKey || '', $event)"
+                  @dblclick.stop.prevent="reflowColumnWidths"
+                ></span>
               </th>
             </template>
           </tr>
@@ -174,12 +200,14 @@
                 'is-selected': isSelected(entry.row),
                 'is-pinned-top': entry.pinned === 'top',
                 'is-pinned-bottom': entry.pinned === 'bottom',
+                'is-row-draggable': rowDraggable && !entry.pinned,
               },
               classNames?.row,
             ]"
             :data-row-key="rowKeyOf(entry.row)"
             :style="styles?.row"
             @click="onRowClick(entry.row, entry.index, $event)"
+            @pointerdown="onRowPointerDown(entry, $event)"
             @mouseenter="scheduleHover(rowKeyOf(entry.row))"
             @mouseleave="scheduleHover(null)"
           >
@@ -258,12 +286,19 @@
                 :aria-hidden="isOverlayColumn(leaf.column) ? 'true' : undefined"
                 :rowspan="spanRowSpan(entry.row, leaf.key)"
                 :colspan="spanColSpan(entry.row, leaf.key)"
+                @click="maybeBeginCellEdit(entry, leaf, $event)"
+                @dblclick="maybeBeginCellEditDouble(entry, leaf, $event)"
               >
                 <KBodyCellInner
                   v-if="!isOverlayColumn(leaf.column)"
                   :column="leaf.column"
                   :row="entry.row"
                   :index="entry.index"
+                  :editing="isCellEditing(entry.row, leaf.key)"
+                  :on-commit="value => commitCellEdit(entry.row, leaf.column, entry.index, value)"
+                  :on-cancel="cancelCellEdit"
+                  :row-drag-handle="rowDraggable && rowDragMode === 'handle' && leaf.key === firstLeafKey"
+                  :on-row-drag-start="event => onRowPointerDown(entry, event)"
                   v-bind="treeCellProps(entry, leaf)"
                 />
               </td>
@@ -344,7 +379,7 @@
                 :aria-sort="cell.isGroup ? undefined : ariaSort(cell.leafKey)"
                 :data-column-key="cell.isGroup ? undefined : cell.leafKey"
               >
-                <KHeadCell :cell="cell" />
+                <KHeadCell :cell="cell" :show-grip="columnDraggable && !cell.isGroup" />
               </th>
               <th
                 v-if="!overlayHeaderCells(headerRow, side).length && !(side === 'left' && leadingInOverlay && rowIndex === 0)"
@@ -444,11 +479,18 @@
                       :style="[pinnedCellStyle(entry), leaf.column.styles?.cell]"
                       :rowspan="spanRowSpan(entry.row, leaf.key)"
                       :colspan="spanColSpan(entry.row, leaf.key)"
+                      @click="maybeBeginCellEdit(entry, leaf, $event)"
+                      @dblclick="maybeBeginCellEditDouble(entry, leaf, $event)"
                     >
                       <KBodyCellInner
                         :column="leaf.column"
                         :row="entry.row"
                         :index="entry.index"
+                        :editing="isCellEditing(entry.row, leaf.key)"
+                        :on-commit="value => commitCellEdit(entry.row, leaf.column, entry.index, value)"
+                        :on-cancel="cancelCellEdit"
+                        :row-drag-handle="rowDraggable && rowDragMode === 'handle' && leaf.key === firstLeafKey"
+                        :on-row-drag-start="event => onRowPointerDown(entry, event)"
                         v-bind="treeCellProps(entry, leaf)"
                       />
                     </td>
@@ -508,11 +550,13 @@ import KRadio from '../Radio/Radio.vue';
 import KPopover from '../Popover/Popover.vue';
 import KButton from '../Button/Button.vue';
 import KSpin from '../Spin/Spin.vue';
+import KInput from '../Input/Input.vue';
 import KEmpty from '../Empty/Empty.vue';
 import KPagination from '../Pagination/Pagination.vue';
 import KOverflowTooltip from './OverflowTooltip.vue';
 import { useTableColumns } from '../../composables/table/useTableColumns';
 import {
+  applyColumnOrder,
   buildSpanPlan,
   buildTreeNodes,
   collectTreeExpandableKeys,
@@ -548,6 +592,8 @@ import type {
   KTableSpanPlan,
   KTableTreeNode,
   KTableTreeOptions,
+  KTableCellEditContext,
+  KTableRowAction,
 } from '../../utils/table';
 
 defineOptions({ name: 'KTable' });
@@ -567,9 +613,21 @@ export type {
   KTableSpanContext,
   KTableSpanMethod,
   KTableTreeOptions,
+  KTableCellEditContext,
+  KTableRowAction,
 } from '../../utils/table';
 
 export type KTableExpandedPlacement = 'inline' | 'bottom';
+export type KTableEditTrigger = 'click' | 'dblclick' | 'manual';
+
+export interface KTableCellEditEvent<T = unknown> {
+  row: T;
+  column: KTableColumn<T>;
+  value: unknown;
+  previousValue: unknown;
+  /** dataSource 下标 */
+  rowIndex: number;
+}
 
 export interface KTableExpandedRenderContext<T = unknown> {
   row: T;
@@ -657,6 +715,22 @@ interface KTableProps<T> {
   filters?: KTableFilterState;
   /** 内置「列设置」按钮 */
   columnSetting?: boolean;
+  /** 列顺序（叶子 key 数组）；不传走内部状态 */
+  columnOrder?: string[];
+  /** 列宽覆盖（叶子 key → px）；不传走内部状态 */
+  columnWidths?: Record<string, number>;
+  /** 拖动表头调整列顺序（同分组内） */
+  columnDraggable?: boolean;
+  /** 拖动表头右边缘调整列宽 */
+  columnResizable?: boolean;
+  /** 工具条显示全局搜索框 */
+  searchable?: boolean;
+  /** 全局搜索占位文案 */
+  searchPlaceholder?: string;
+  /** 全局搜索关键字；不传走内部状态 */
+  globalFilter?: string;
+  /** 自定义全局搜索匹配；默认匹配可见叶子列的文本 */
+  globalFilterMethod?: (row: T, keyword: string) => boolean;
   /** 行展开：配合 #expanded 插槽；false 可强制关闭 */
   expandable?: boolean;
   /** 默认展开全部可展开行 */
@@ -667,6 +741,14 @@ interface KTableProps<T> {
   expandedPlacement?: KTableExpandedPlacement;
   /** 展开内容渲染函数；某行返回 undefined 时回退 #expanded 插槽（null 视为空内容） */
   expandedRender?: (context: KTableExpandedRenderContext<T>) => VNodeChild;
+  /** 进入单元格编辑的方式：单击 / 双击 / 只能通过 v-model:editingCell 手动进入 */
+  editTrigger?: KTableEditTrigger;
+  /** 按住行拖动排序：发 rowReorder，不直接改 dataSource */
+  rowDraggable?: boolean;
+  /** 列拖拽触发方式：handle 仅抓手 / press 表头任意处 */
+  columnDragMode?: 'handle' | 'press';
+  /** 行拖拽触发方式：handle 仅行抓手 / press 按住行任意处 */
+  rowDragMode?: 'handle' | 'press';
   classNames?: Partial<Record<TablePart, string>>;
   styles?: Partial<Record<TablePart, CSSProperties>>;
 }
@@ -686,6 +768,18 @@ const props = withDefaults(defineProps<KTableProps<T>>(), {
   rowSelection: undefined,
   scroll: undefined,
   columnSetting: false,
+  columnOrder: undefined,
+  columnWidths: undefined,
+  columnDraggable: false,
+  columnResizable: false,
+  searchable: false,
+  searchPlaceholder: '搜索',
+  globalFilter: undefined,
+  globalFilterMethod: undefined,
+  editTrigger: 'click',
+  rowDraggable: false,
+  columnDragMode: 'handle',
+  rowDragMode: 'handle',
   expandable: true,
   defaultExpandAll: false,
   rowExpandable: undefined,
@@ -707,6 +801,8 @@ const emit = defineEmits<{
   rowClick: [row: T, index: number, event: MouseEvent];
   pageChange: [page: number, pageSize: number];
   expandChange: [keys: KTableRowKey[], row: T, expanded: boolean];
+  cellEdit: [payload: KTableCellEditEvent<T>];
+  rowReorder: [payload: { row: T; from: number; to: number }];
 }>();
 
 const current = defineModel<number>('current', { default: 1 });
@@ -720,6 +816,13 @@ const rowPinning = defineModel<{ top?: KTableRowKey[]; bottom?: KTableRowKey[] }
 const columnVisibility = defineModel<Record<string, boolean>>('columnVisibility', {
   default: () => ({}),
 });
+const columnOrder = defineModel<string[]>('columnOrder', { default: () => [] });
+const columnWidths = defineModel<Record<string, number>>('columnWidths', { default: () => ({}) });
+const globalFilter = defineModel<string>('globalFilter', { default: '' });
+const editingCell = defineModel<{ rowKey: KTableRowKey; columnKey: string } | null>(
+  'editingCell',
+  { default: null },
+);
 const rootAttrs = { 'data-part': 'root' };
 const filterOpen = reactive<Record<string, boolean>>({});
 const slots = useSlots();
@@ -735,16 +838,19 @@ function expandedContent(row: T, index: number): VNodeChild {
   return null;
 }
 
+const orderedColumns = computed(() => applyColumnOrder(props.columns, columnOrder.value));
+const widthOverrides = computed(() => columnWidths.value ?? {});
 const {
   allLeaves,
   leaves,
   headerRows,
   headerDepth,
   keyOfColumn,
+  leafByKey,
   leafIndexByKey,
   settings: columnSettings,
   visibleCount: visibleColumnCount,
-} = useTableColumns<T>(() => props.columns, () => columnVisibility.value);
+} = useTableColumns<T>(() => orderedColumns.value, () => columnVisibility.value);
 
 const showColumnBorders = computed(() => props.columnBorders ?? props.bordered);
 const paginationEnabled = computed(() => props.pagination !== false);
@@ -792,7 +898,7 @@ const columnSpan = computed(
 );
 const visibleColumns = computed(() => leaves.value.map(leaf => leaf.column));
 const toolbarVisible = computed(
-  () => props.columnSetting || Boolean(slots.filter || slots.toolbar),
+  () => props.columnSetting || props.searchable || Boolean(slots.filter || slots.toolbar),
 );
 
 const internalSort = ref<KTableSortState | null>(null);
@@ -844,6 +950,19 @@ const sourceIndex = computed(() => {
 /** 筛选/排序作用于全量叶子列：隐藏列不丢排序与筛选状态 */
 const dataColumns = computed(() => allLeaves.value.map(leaf => leaf.column));
 
+const keyword = computed(() => (globalFilter.value ?? '').trim());
+const globalActive = computed(() => keyword.value.length > 0);
+/** 全局搜索：默认拼接可见叶子列的文本做包含匹配，树形下与列筛选一起决定命中行 */
+function rowMatchesKeyword(row: T) {
+  if (!globalActive.value) return true;
+  if (props.globalFilterMethod) return props.globalFilterMethod(row, keyword.value);
+  const text = keyword.value.toLowerCase();
+  return dataColumns.value.some(column => {
+    const value = getCellValue(row, column.dataIndex);
+    return value != null && String(value).toLowerCase().includes(text);
+  });
+}
+
 const treeNodes = computed<KTableTreeNode<T>[] | null>(() => {
   if (!treeEnabled.value) return null;
   return buildTreeNodes(props.dataSource, treeChildrenKey.value, row => rowKeyOf(row));
@@ -853,11 +972,13 @@ const treeFiltered = computed(() => {
   const nodes = treeNodes.value;
   if (!nodes) return null;
   const columns = dataColumns.value;
-  const hasFilters = Object.entries(activeFilters.value).some(
-    ([key, values]) =>
-      values.length > 0 &&
-      columns.some((column, index) => columnKeyOf(column, index) === key && column.filters?.length),
-  );
+  const hasFilters =
+    globalActive.value ||
+    Object.entries(activeFilters.value).some(
+      ([key, values]) =>
+        values.length > 0 &&
+        columns.some((column, index) => columnKeyOf(column, index) === key && column.filters?.length),
+    );
   if (!hasFilters) return { nodes, forcedExpanded: new Set<KTableRowKey>() };
   const allRows: T[] = [];
   const collect = (list: KTableTreeNode<T>[]) => {
@@ -867,7 +988,9 @@ const treeFiltered = computed(() => {
     });
   };
   collect(nodes);
-  const matched = new Set(filterRows(allRows, columns, activeFilters.value));
+  const matched = new Set(
+    filterRows(allRows, columns, activeFilters.value).filter(rowMatchesKeyword),
+  );
   return filterTreeNodes(nodes, row => matched.has(row));
 });
 const treeSorted = computed(() => {
@@ -909,12 +1032,16 @@ function isTreeExpanded(row: T) {
 const processedRows = computed(() => {
   if (treeFlat.value) return treeFlat.value.map(item => item.row);
   return sortRows(
-    filterRows(props.dataSource, dataColumns.value, activeFilters.value),
+    filterRows(props.dataSource, dataColumns.value, activeFilters.value).filter(rowMatchesKeyword),
     dataColumns.value,
     sort.value,
   );
 });
 /** 固定行不受筛选/排序/分页影响，始终按 dataSource 顺序显示 */
+watch(keyword, () => {
+  if (paginationEnabled.value) current.value = 1;
+});
+
 const pinnedTopRows = computed(() =>
   props.dataSource.filter(row => pinnedTopKeys.value.has(rowKeyOf(row))),
 );
@@ -1354,6 +1481,7 @@ function fixedOffsets(side: 'left' | 'right') {
     if (leaf.column.fixed !== side) continue;
     result[leaf.key] = offset;
     offset +=
+      widthOverrides.value[leaf.key] ??
       frozenWidths.value?.[leaf.key] ??
       measuredWidths.value[leaf.key] ??
       (Number(leaf.column.width) || 0);
@@ -1381,15 +1509,32 @@ const wrapStyle = computed<CSSProperties>(() => {
     scrollbarGutter: scroll.y != null ? 'stable' : undefined,
   };
 });
+const totalLeafWidth = computed(() =>
+  leaves.value.reduce((sum, leaf) => sum + leafWidthOf(leaf), 0),
+);
 const tableStyle = computed<CSSProperties>(() => {
   const frozen = frozenTableWidth.value;
+  const resizeMin = props.columnResizable
+    ? Math.max(
+        typeof props.scroll?.x === 'number' ? props.scroll.x : 0,
+        totalLeafWidth.value + leadingWidth.value,
+      )
+    : null;
   return {
-    width: frozen == null ? undefined : `${frozen}px`,
+    width:
+      frozen != null ? `${frozen}px` : resizeMin != null ? `${resizeMin}px` : undefined,
     minWidth:
-      frozen == null && props.scroll?.x != null ? widthStyle(props.scroll.x) : undefined,
+      frozen == null
+        ? resizeMin != null
+          ? `${resizeMin}px`
+          : props.scroll?.x != null
+            ? widthStyle(props.scroll.x)
+            : undefined
+        : undefined,
     /* 省略依赖固定布局；固定列也用固定布局稳定列宽，避免随内容伸缩造成漂移 */
     tableLayout:
       frozen != null ||
+      props.columnResizable ||
       leaves.value.some(leaf => leaf.column.ellipsis) ||
       leaves.value.some(leaf => leaf.column.fixed)
         ? 'fixed'
@@ -1397,6 +1542,8 @@ const tableStyle = computed<CSSProperties>(() => {
   };
 });
 function colStyle(leaf: KTableLeaf<T>): CSSProperties {
+  const override = widthOverrides.value[leaf.key];
+  if (override != null) return { width: `${override}px` };
   const frozen = frozenWidths.value?.[leaf.key];
   return { width: frozen == null ? widthStyle(leaf.column.width) : `${frozen}px` };
 }
@@ -1494,11 +1641,16 @@ function quantizeColumnWidths() {
     if (frozenTableWidth.value != null) frozenTableWidth.value = null;
     return;
   }
-  const signature = leaves.value.map(leaf => `${leaf.key}:${leaf.column.width ?? ''}`).join('|');
+  const signature = leaves.value
+    .map(leaf => `${leaf.key}:${widthOverrides.value[leaf.key] ?? leaf.column.width ?? ''}`)
+    .join('|');
   if (!baseWidths || signature !== baseSignature) {
     baseWidths = {};
     for (const leaf of leaves.value) {
-      baseWidths[leaf.key] = measuredWidths.value[leaf.key] ?? (Number(leaf.column.width) || 0);
+      baseWidths[leaf.key] =
+        widthOverrides.value[leaf.key] ??
+        measuredWidths.value[leaf.key] ??
+        (Number(leaf.column.width) || 0);
     }
     baseSignature = signature;
   }
@@ -1718,6 +1870,7 @@ function fixedLeavesOf(side: 'left' | 'right') {
 }
 function leafWidthOf(leaf: KTableLeaf<T>) {
   return (
+    widthOverrides.value[leaf.key] ??
     frozenWidths.value?.[leaf.key] ??
     measuredWidths.value[leaf.key] ??
     (Number(leaf.column.width) || 0)
@@ -1978,6 +2131,400 @@ function onPageChange(page: number, pageSize: number) {
   emit('pageChange', page, pageSize);
 }
 
+/* ---------- 全局搜索 / 列拖拽 / 列宽 ---------- */
+function onSearchInput(event: Event) {
+  globalFilter.value = (event.target as HTMLInputElement).value;
+}
+
+interface ColumnDragState {
+  key: string;
+  startX: number;
+  active: boolean;
+  sourceEl: HTMLElement | null;
+  ghost: HTMLElement | null;
+  line: HTMLElement | null;
+  targetKey: string | null;
+  targetSide: 'start' | 'end';
+}
+let columnDrag: ColumnDragState | null = null;
+
+function sameColumnGroup(sourceKey: string, targetKey: string) {
+  const all = allLeaves.value;
+  const source = all.find(leaf => leaf.key === sourceKey);
+  const destination = all.find(leaf => leaf.key === targetKey);
+  return Boolean(
+    source &&
+      destination &&
+      source.key !== destination.key &&
+      source.parents.join('/') === destination.parents.join('/'),
+  );
+}
+function onHeaderPointerDown(cell: KTableHeaderCell<T>, event: PointerEvent) {
+  if (!props.columnDraggable || cell.isGroup || !cell.leafKey) return;
+  const target = event.target as HTMLElement;
+  if (target.closest('button, input, .k-table__resize')) return;
+  if (props.columnDragMode === 'handle' && !target.closest('.k-table__grip')) return;
+  columnDrag = {
+    key: cell.leafKey,
+    startX: event.clientX,
+    active: false,
+    sourceEl: (event.currentTarget as HTMLElement | null) ?? null,
+    ghost: null,
+    line: null,
+    targetKey: null,
+    targetSide: 'start',
+  };
+  window.addEventListener('pointermove', onHeaderPointerMove);
+  window.addEventListener('pointerup', onHeaderPointerUp, { once: true });
+}
+function updateColumnDropLine(event: PointerEvent) {
+  const drag = columnDrag;
+  if (!drag) return;
+  const target = (document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null)
+    ?.closest<HTMLElement>('th[data-column-key]');
+  const targetKey = target?.dataset.columnKey ?? null;
+  if (!targetKey || !sameColumnGroup(drag.key, targetKey)) {
+    drag.targetKey = null;
+    if (drag.line) drag.line.style.display = 'none';
+    return;
+  }
+  const rect = target!.getBoundingClientRect();
+  const side = event.clientX < rect.left + rect.width / 2 ? 'start' : 'end';
+  drag.targetKey = targetKey;
+  drag.targetSide = side;
+  if (!drag.line) {
+    drag.line = document.createElement('div');
+    drag.line.className = 'k-table__col-drop-line';
+    document.body.appendChild(drag.line);
+  }
+  const wrapRect = wrapEl.value?.getBoundingClientRect();
+  drag.line.style.display = 'block';
+  drag.line.style.left = `${side === 'start' ? rect.left : rect.right}px`;
+  drag.line.style.top = `${wrapRect?.top ?? rect.top}px`;
+  drag.line.style.height = `${wrapRect?.height ?? rect.height}px`;
+}
+function onHeaderPointerMove(event: PointerEvent) {
+  const drag = columnDrag;
+  if (!drag) return;
+  if (!drag.active) {
+    if (Math.abs(event.clientX - drag.startX) <= 4) return;
+    drag.active = true;
+    document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+    drag.sourceEl?.classList.add('is-column-dragging');
+    const ghost = document.createElement('div');
+    ghost.className = 'k-table__col-ghost';
+    if (drag.sourceEl) {
+      const rect = drag.sourceEl.getBoundingClientRect();
+      const style = getComputedStyle(drag.sourceEl);
+      const clone = drag.sourceEl.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('.k-table__resize, .k-table__grip').forEach(node => node.remove());
+      clone.style.cssText =
+        `display:flex;align-items:center;gap:4px;width:${rect.width}px;height:${rect.height}px;` +
+        `padding:${style.padding};box-sizing:border-box;font:${style.font};color:${style.color};`;
+      ghost.style.width = `${rect.width}px`;
+      ghost.style.height = `${rect.height}px`;
+      ghost.style.background = style.backgroundColor;
+      ghost.appendChild(clone);
+    }
+    document.body.appendChild(ghost);
+    drag.ghost = ghost;
+  }
+  if (drag.ghost) {
+    drag.ghost.style.left = `${event.clientX + 12}px`;
+    drag.ghost.style.top = `${event.clientY + 12}px`;
+  }
+  updateColumnDropLine(event);
+}
+function onHeaderPointerUp(event: PointerEvent) {
+  const drag = columnDrag;
+  if (!drag) return;
+  if (drag.active) updateColumnDropLine(event);
+  window.removeEventListener('pointermove', onHeaderPointerMove);
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  columnDrag = null;
+  drag.sourceEl?.classList.remove('is-column-dragging');
+  drag.ghost?.remove();
+  drag.line?.remove();
+  if (!drag.active) return;
+  const targetKey = drag.targetKey;
+  if (!targetKey || !sameColumnGroup(drag.key, targetKey)) return;
+  const keys = allLeaves.value.map(leaf => leaf.key);
+  const from = keys.indexOf(drag.key);
+  keys.splice(from, 1);
+  const targetIndex = keys.indexOf(targetKey);
+  if (targetIndex < 0) return;
+  keys.splice(drag.targetSide === 'end' ? targetIndex + 1 : targetIndex, 0, drag.key);
+  columnOrder.value = keys;
+}
+function reflowColumnWidths() {
+  if (!props.columnResizable || !leaves.value.length) return;
+  const wrap = wrapEl.value;
+  const target =
+    Math.max(
+      typeof props.scroll?.x === 'number' ? props.scroll.x : 0,
+      wrap?.clientWidth ?? 0,
+    ) - leadingWidth.value;
+  const base: Record<string, number> = {};
+  for (const leaf of leaves.value) {
+    base[leaf.key] =
+      widthOverrides.value[leaf.key] ??
+      ((leaf ? leafWidthOf(leaf) : 0) || Number(leaf.column.width) || 80);
+  }
+  columnWidths.value = distributeIntegerWidths(base, Math.max(target, leaves.value.length * 56));
+}
+function onHeaderDblClick(event: MouseEvent) {
+  if (!props.columnResizable) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('button, input, .k-table__resize')) return;
+  reflowColumnWidths();
+}
+function onResizeReset(key: string) {
+  if (!key || !widthOverrides.value[key]) return;
+  const lastKey = leaves.value[leaves.value.length - 1]?.key;
+  /* 最后一列双击恢复初始列宽（含之前拖动产生的宽度快照） */
+  if (key === lastKey) {
+    columnWidths.value = {};
+    return;
+  }
+  const next = { ...columnWidths.value };
+  delete next[key];
+  columnWidths.value = next;
+}
+function onResizeStart(key: string, event: PointerEvent) {
+  if (!props.columnResizable || !key) return;
+  const keys = leaves.value.map(leaf => leaf.key);
+  const index = keys.indexOf(key);
+  const nextKey = index >= 0 ? keys[index + 1] : undefined;
+  const widthOf = (leafKey: string) => {
+    const leaf = leafByKey.value.get(leafKey);
+    return (
+      widthOverrides.value[leafKey] ??
+      ((leaf ? leafWidthOf(leaf) : 0) || Number(leaf?.column.width) || 80)
+    );
+  };
+  const startX = event.clientX;
+  const startCurrent = widthOf(key);
+  const startNext = nextKey ? widthOf(nextKey) : 0;
+  /* 首次拖动时冻结当前实际列宽，避免只覆盖两列后其余列按声明宽度重新分配 */
+  const snapshot: Record<string, number> = {};
+  for (const leaf of leaves.value) snapshot[leaf.key] = widthOf(leaf.key);
+  const MIN = 56;
+  const move = (moveEvent: PointerEvent) => {
+    let delta = Math.round(moveEvent.clientX - startX);
+    if (!nextKey) {
+      /* 最后一列：继续加宽，表格随列宽变宽 */
+      columnWidths.value = { ...snapshot, [key]: Math.max(MIN, startCurrent + delta) };
+      return;
+    }
+    delta = Math.min(delta, startNext - MIN);
+    const current = Math.max(MIN, startCurrent + delta);
+    const next = startCurrent + startNext - current;
+    columnWidths.value = { ...snapshot, [key]: current, [nextKey]: next };
+  };
+  const stop = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', stop);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  };
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', stop, { once: true });
+}
+
+/* ---------- 行拖拽：按住行拖动，线条标示落位，发 rowReorder ---------- */
+interface RowDragState {
+  row: T;
+  from: number;
+  startX: number;
+  startY: number;
+  active: boolean;
+  sourceEl: HTMLElement | null;
+  ghost: HTMLElement | null;
+  line: HTMLElement | null;
+  to: number | null;
+}
+let rowDrag: RowDragState | null = null;
+
+function createRowGhost(source: HTMLElement) {
+  const rect = source.getBoundingClientRect();
+  const table = document.createElement('table');
+  table.className = 'k-table__table k-table__row-ghost';
+  const tbody = document.createElement('tbody');
+  const clone = source.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+  clone.removeAttribute('data-row-key');
+  [...clone.children].forEach((cell, index) => {
+    const original = source.children[index] as HTMLElement | undefined;
+    if (!original) return;
+    const td = cell as HTMLElement;
+    const style = getComputedStyle(original);
+    td.style.width = `${original.getBoundingClientRect().width}px`;
+    td.style.padding = style.padding;
+    td.style.background = style.backgroundColor;
+    td.style.color = style.color;
+    td.style.boxSizing = 'border-box';
+  });
+  clone.style.backgroundColor = getComputedStyle(source).backgroundColor;
+  tbody.appendChild(clone);
+  table.appendChild(tbody);
+  table.style.cssText =
+    `position:fixed;left:0;top:0;margin:0;width:${rect.width}px;` +
+    'border-collapse:separate;border-spacing:0;pointer-events:none;z-index:2147483000;' +
+    'box-shadow:0 10px 24px rgb(0 0 0 / 16%);border-radius:6px;overflow:hidden;';
+  document.body.appendChild(table);
+  return table;
+}
+function onRowPointerDown(
+  entry: { row: T; index: number; pinned?: string | null },
+  event: PointerEvent,
+) {
+  if (!props.rowDraggable || entry.pinned) return;
+  const pointerTarget = event.target as HTMLElement;
+  if (props.rowDragMode === 'handle' && !pointerTarget.closest('.k-table__row-grip')) return;
+  if (
+    pointerTarget.closest(
+      'button, a, input, textarea, select, .k-table__actions, .k-table__expand, .k-table__tree-caret, .k-table__resize',
+    ) &&
+    !pointerTarget.closest('.k-table__row-grip')
+  ) {
+    return;
+  }
+  const from = pageRows.value.indexOf(entry.row);
+  rowDrag = {
+    row: entry.row,
+    from: from >= 0 ? from : entry.index,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+    sourceEl: (event.currentTarget as HTMLElement | null) ?? null,
+    ghost: null,
+    line: null,
+    to: null,
+  };
+  window.addEventListener('pointermove', onRowPointerMove);
+  window.addEventListener('pointerup', onRowPointerUp, { once: true });
+}
+function onRowPointerMove(event: PointerEvent) {
+  const drag = rowDrag;
+  if (!drag) return;
+  if (!drag.active) {
+    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) <= 5) return;
+    drag.active = true;
+    document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+    drag.sourceEl?.classList.add('is-row-dragging');
+    if (drag.sourceEl) drag.ghost = createRowGhost(drag.sourceEl);
+    drag.line = document.createElement('div');
+    drag.line.className = 'k-table__row-drop-line';
+    document.body.appendChild(drag.line);
+  }
+  if (drag.ghost && drag.sourceEl) {
+    const rect = drag.sourceEl.getBoundingClientRect();
+    drag.ghost.style.left = `${event.clientX - rect.width / 2}px`;
+    drag.ghost.style.top = `${event.clientY - rect.height / 2}px`;
+  }
+  const table = tableEl.value;
+  if (!table) return;
+  const rows = [
+    ...table.querySelectorAll<HTMLElement>(
+      'tbody > tr.k-table__row[data-row-key]:not(.is-pinned-top):not(.is-pinned-bottom)',
+    ),
+  ];
+  if (!rows.length) return;
+  let to = rows.length;
+  for (let index = 0; index < rows.length; index += 1) {
+    const rect = rows[index].getBoundingClientRect();
+    if (event.clientY < rect.top + rect.height / 2) {
+      to = index;
+      break;
+    }
+  }
+  drag.to = to;
+  const first = rows[0].getBoundingClientRect();
+  const y =
+    to < rows.length
+      ? rows[to].getBoundingClientRect().top
+      : rows[rows.length - 1].getBoundingClientRect().bottom;
+  if (drag.line) {
+    drag.line.style.display = 'block';
+    drag.line.style.left = `${first.left}px`;
+    drag.line.style.width = `${first.width}px`;
+    drag.line.style.top = `${y - 1}px`;
+  }
+}
+function onRowPointerUp() {
+  const drag = rowDrag;
+  window.removeEventListener('pointermove', onRowPointerMove);
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  rowDrag = null;
+  if (!drag) return;
+  drag.sourceEl?.classList.remove('is-row-dragging');
+  drag.ghost?.remove();
+  drag.line?.remove();
+  if (!drag.active || drag.to == null) return;
+  let to = drag.to;
+  if (to > drag.from) to -= 1;
+  if (to === drag.from) return;
+  emit('rowReorder', { row: drag.row, from: drag.from, to });
+}
+
+/* ---------- 单元格编辑：单击 / 双击 / 手动（v-model:editingCell） ---------- */
+function isCellEditing(row: T, columnKey: string) {
+  const cell = editingCell.value;
+  return Boolean(
+    cell && cell.columnKey === columnKey && String(cell.rowKey) === String(rowKeyOf(row)),
+  );
+}
+function maybeBeginCellEdit(
+  entry: { row: T; index: number },
+  leaf: KTableLeaf<T>,
+  event: MouseEvent,
+) {
+  if (!leaf.column.editable || props.editTrigger !== 'click') return;
+  beginCellEdit(entry, leaf, event);
+}
+function maybeBeginCellEditDouble(
+  entry: { row: T; index: number },
+  leaf: KTableLeaf<T>,
+  event: MouseEvent,
+) {
+  if (!leaf.column.editable || props.editTrigger !== 'dblclick') return;
+  beginCellEdit(entry, leaf, event);
+}
+function beginCellEdit(
+  entry: { row: T; index: number },
+  leaf: KTableLeaf<T>,
+  event: MouseEvent,
+) {
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('button, a, input, textarea, select, .k-table__actions')) return;
+  editingCell.value = { rowKey: rowKeyOf(entry.row), columnKey: leaf.key };
+  event.stopPropagation();
+}
+function commitCellEdit(
+  row: T,
+  column: KTableColumn<T>,
+  rowIndex: number,
+  value: unknown,
+) {
+  editingCell.value = null;
+  emit('cellEdit', {
+    row,
+    column,
+    value,
+    previousValue: getCellValue(row, column.dataIndex),
+    rowIndex,
+  });
+}
+function cancelCellEdit() {
+  editingCell.value = null;
+}
+
 /* 单元格内容：列 render 优先，否则按 dataIndex 取原始值 */
 const KCellContent = defineComponent({
   props: {
@@ -2023,11 +2570,220 @@ const KBodyCellInner = defineComponent({
       type: Function as PropType<(() => void) | undefined>,
       default: undefined,
     },
+    editing: { type: Boolean, default: false },
+    rowDragHandle: { type: Boolean, default: false },
+    onRowDragStart: {
+      type: Function as PropType<((event: PointerEvent) => void) | undefined>,
+      default: undefined,
+    },
+    onCommit: {
+      type: Function as PropType<((value: unknown) => void) | undefined>,
+      default: undefined,
+    },
+    onCancel: {
+      type: Function as PropType<(() => void) | undefined>,
+      default: undefined,
+    },
   },
   setup(cellProps) {
+    const draft = ref('');
+    const inputRef = ref<ComponentPublicInstance | null>(null);
+    let finished = false;
+    watch(
+      () => cellProps.editing,
+      editing => {
+        if (!editing) return;
+        finished = false;
+        const value = getCellValue(cellProps.row, cellProps.column.dataIndex);
+        draft.value = value == null ? '' : String(value);
+        nextTick(() => {
+          const root = inputRef.value?.$el as HTMLElement | undefined;
+          const input = root?.querySelector?.('input, textarea') as HTMLInputElement | null;
+          input?.focus();
+          input?.select?.();
+        });
+      },
+      { immediate: true },
+    );
+    const ICON_PATHS: Record<string, string> = {
+      view: 'M1 8s2.6-5 7-5 7 5 7 5-2.6 5-7 5-7-5-7-5zm7 2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+      edit: 'M3 11.5V13h1.5l7-7L10 4.5l-7 7zM12.7 3.3a1 1 0 0 1 0 1.4l-1 1L10.3 4.3l1-1a1 1 0 0 1 1.4 0z',
+      copy: 'M5 2h6a1 1 0 0 1 1 1v1H5V2zm8 2h1a1 1 0 0 1 1 1v9H5v-1H4V4h1V3a1 1 0 0 1 1-1h1V1h6v1a1 1 0 0 1 1 1v1zM5 5v8h9V5H5z',
+      remove: 'M3 5h10M6 5V3h4v2m-5 0 .5 8h5L11 5',
+      more: 'M3 8h.01M8 8h.01M13 8h.01',
+    };
+    function renderActionIcon(action: KTableRowAction<T>, fallback?: string) {
+      const path = action.icon ? ICON_PATHS[action.icon] : undefined;
+      if (path) {
+        return h(
+          'svg',
+          {
+            viewBox: '0 0 16 16',
+            width: '1em',
+            height: '1em',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': 1.4,
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+            'aria-hidden': 'true',
+          },
+          [h('path', { d: path })],
+        );
+      }
+      return h('span', { class: 'k-table__action-text' }, fallback ?? action.label);
+    }
+    function renderActions() {
+      const column = cellProps.column;
+      const actions = column.actions ?? [];
+      const max = Math.max(1, column.maxActions ?? 3);
+      const disabledOf = (action: KTableRowAction<T>) =>
+        typeof action.disabled === 'function'
+          ? action.disabled(cellProps.row)
+          : Boolean(action.disabled);
+      const renderAction = (action: KTableRowAction<T>) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: ['k-table__action', { 'is-danger': action.danger }],
+            disabled: disabledOf(action),
+            title: action.label,
+            'aria-label': action.label,
+            onClick: (event: MouseEvent) => {
+              event.stopPropagation();
+              if (disabledOf(action)) return;
+              action.onClick?.({ row: cellProps.row, index: cellProps.index, event });
+            },
+          },
+          [renderActionIcon(action)],
+        );
+      const items: VNodeChild[] = [];
+      const slotContent = slots.actions?.({
+        row: cellProps.row,
+        index: cellProps.index,
+        column,
+      });
+      if (slotContent) items.push(h('span', { class: 'k-table__actions-slot' }, slotContent));
+      items.push(...actions.slice(0, max).map(renderAction));
+      const rest = actions.slice(max);
+      if (rest.length) {
+        items.push(
+          h(
+            KPopover,
+            { trigger: 'click', placement: 'bottomRight', arrow: false },
+            {
+              trigger: () =>
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'k-table__action',
+                    title: '更多',
+                    'aria-label': '更多操作',
+                  },
+                  [renderActionIcon({ label: '更多', icon: 'more' })],
+                ),
+              default: () =>
+                h(
+                  'div',
+                  { class: 'k-table__actions-more' },
+                  rest.map(action =>
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: ['k-table__action-item', { 'is-danger': action.danger }],
+                        disabled: disabledOf(action),
+                        onClick: (event: MouseEvent) => {
+                          event.stopPropagation();
+                          if (disabledOf(action)) return;
+                          action.onClick?.({ row: cellProps.row, index: cellProps.index, event });
+                        },
+                      },
+                      [renderActionIcon(action), h('span', action.label)],
+                    ),
+                  ),
+                ),
+            },
+          ),
+        );
+      }
+      return h('span', { class: 'k-table__actions' }, items);
+    }
+    const GRIP_SVG =
+      '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M8 5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M8 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M8 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+      '<path d="M16 5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M16 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M16 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+      '</svg>';
+    function wrapWithRowGrip(content: VNodeChild) {
+      return h('span', { class: 'k-table__cell-with-grip' }, [
+        h('span', {
+          class: 'k-table__row-grip',
+          'aria-hidden': 'true',
+          innerHTML: GRIP_SVG,
+          onPointerdown: (event: PointerEvent) => {
+            event.stopPropagation();
+            cellProps.onRowDragStart?.(event);
+          },
+        }),
+        content,
+      ]);
+    }
     return () => {
+      const column = cellProps.column;
+      if (column.actions?.length) return renderActions();
+      if (cellProps.editing && column.editable) {
+        const value = getCellValue(cellProps.row, column.dataIndex);
+        const finish = (next: unknown) => {
+          if (finished) return;
+          finished = true;
+          cellProps.onCommit?.(next);
+        };
+        const cancel = () => {
+          if (finished) return;
+          finished = true;
+          cellProps.onCancel?.();
+        };
+        if (column.editRender) {
+          return column.editRender({
+            row: cellProps.row,
+            value,
+            index: cellProps.index,
+            column,
+            commit: finish,
+            cancel,
+          });
+        }
+        return h(
+          'span',
+          {
+            class: 'k-table__editor',
+            onKeydown: (event: KeyboardEvent) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                finish(draft.value);
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                cancel();
+              }
+            },
+            onFocusout: () => finish(draft.value),
+          },
+          [
+            h(KInput, {
+              ref: inputRef,
+              modelValue: draft.value,
+              size: 'sm',
+              'onUpdate:modelValue': (next: string) => {
+                draft.value = next;
+              },
+            }),
+          ],
+        );
+      }
       const content = h(KCellContent, {
-        column: cellProps.column,
+        column,
         row: cellProps.row,
         index: cellProps.index,
       });
@@ -2041,7 +2797,7 @@ const KBodyCellInner = defineComponent({
       } else if (cellProps.column.ellipsis) {
         inner = h('span', { class: 'k-table__ellipsis-text' }, [content]);
       }
-      if (!cellProps.showTree) return inner;
+      if (!cellProps.showTree) return cellProps.rowDragHandle ? wrapWithRowGrip(inner) : inner;
       const indent = h('span', {
         class: 'k-table__tree-indent',
         style: { width: `${cellProps.treeDepth * treeIndent.value}px` },
@@ -2082,11 +2838,12 @@ const KBodyCellInner = defineComponent({
             ],
           )
         : h('span', { class: 'k-table__tree-caret is-placeholder', 'aria-hidden': 'true' });
-      return h('span', { class: 'k-table__tree' }, [
+      const tree = h('span', { class: 'k-table__tree' }, [
         indent,
         caret,
         h('span', { class: 'k-table__tree-content' }, [inner]),
       ]);
+      return cellProps.rowDragHandle ? wrapWithRowGrip(tree) : tree;
     };
   },
 });
@@ -2095,6 +2852,7 @@ const KBodyCellInner = defineComponent({
 const KHeadCell = defineComponent({
   props: {
     cell: { type: Object as PropType<KTableHeaderCell<T>>, required: true },
+    showGrip: { type: Boolean, default: false },
   },
   setup(headProps) {
     return () => {
@@ -2210,6 +2968,16 @@ const KHeadCell = defineComponent({
                 ),
             },
           ),
+        );
+      }
+      const gripSvg =
+        '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M8 5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M8 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M8 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+        '<path d="M16 5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M16 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M16 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+        '</svg>';
+      if (headProps.showGrip) {
+        inner.unshift(
+          h('span', { class: 'k-table__grip', 'aria-hidden': 'true', innerHTML: gripSvg }),
         );
       }
       return h('div', { class: 'k-table__th-inner' }, inner);
@@ -2403,11 +3171,208 @@ defineSlots<{
   background-position: left bottom;
 }
 .k-table .k-table__cell--head {
+  position: relative;
   color: var(--k-color-text-secondary);
   font-weight: var(--k-font-weight-heading);
   background-color: var(--k-table-head-bg);
   text-align: start;
   white-space: nowrap;
+}
+.k-table .k-table__cell--head.is-draggable {
+  cursor: grab;
+}
+.k-table__grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-inline-end: 6px;
+  border-radius: var(--k-border-radius-sm);
+  color: var(--k-color-text-tertiary);
+  font-size: 14px;
+  vertical-align: middle;
+  cursor: grab;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+.k-table__grip:hover {
+  background: var(--k-color-fill-tertiary);
+  color: var(--k-color-text);
+}
+.k-table__grip:active {
+  background: var(--k-color-fill-secondary);
+  color: var(--k-color-text);
+  cursor: grabbing;
+}
+.k-table__cell--head.is-column-dragging {
+  opacity: 0.4;
+}
+.k-table__col-ghost {
+  position: fixed;
+  z-index: 2147483000;
+  padding: 6px 12px;
+  border-radius: var(--k-border-radius-sm);
+  background: var(--k-color-bg-elevated);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 16%);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--k-color-text);
+  pointer-events: none;
+}
+.k-table__col-drop-line {
+  position: fixed;
+  z-index: 2147483000;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--k-color-primary);
+  pointer-events: none;
+}
+.k-table__row-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-inline-end: 6px;
+  border-radius: var(--k-border-radius-sm);
+  color: var(--k-color-text-tertiary);
+  font-size: 14px;
+  vertical-align: middle;
+  cursor: grab;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+.k-table__row-grip:hover {
+  background: var(--k-color-fill-tertiary);
+  color: var(--k-color-text);
+}
+.k-table__row-grip:active {
+  background: var(--k-color-fill-secondary);
+  color: var(--k-color-text);
+  cursor: grabbing;
+}
+.k-table__cell-with-grip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+}
+.k-table__row.is-row-draggable {
+  cursor: grab;
+}
+.k-table__row.is-row-draggable:active {
+  cursor: grabbing;
+}
+.k-table__row.is-row-dragging {
+  opacity: 0.4;
+}
+.k-table__row-drop-line {
+  position: fixed;
+  z-index: 2147483000;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--k-color-primary);
+  pointer-events: none;
+}
+.k-table .k-table__cell--head.is-draggable:active {
+  cursor: grabbing;
+}
+.k-table__resize {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: -4px;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 3;
+}
+.k-table__resize::after {
+  content: '';
+  position: absolute;
+  inset-block: 25%;
+  inset-inline-start: 3px;
+  width: 1px;
+  background: var(--k-color-border);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.k-table__cell--head:hover .k-table__resize::after {
+  opacity: 1;
+}
+.k-table__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 24px;
+}
+.k-table__actions-slot {
+  display: inline-flex;
+  align-items: center;
+}
+.k-table__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--k-border-radius-sm);
+  background: transparent;
+  color: var(--k-color-text-secondary);
+  cursor: pointer;
+}
+.k-table__action:hover:not(:disabled) {
+  background: var(--k-color-fill-tertiary);
+  color: var(--k-color-text);
+}
+.k-table__action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.k-table__action.is-danger:not(:disabled) {
+  color: var(--k-color-error);
+}
+.k-table__action-text {
+  padding: 0 4px;
+  font-size: 12px;
+}
+.k-table__actions-more {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+.k-table__action-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--k-border-radius-sm);
+  background: transparent;
+  color: var(--k-color-text);
+  font-size: 13px;
+  text-align: start;
+  cursor: pointer;
+}
+.k-table__action-item:hover:not(:disabled) {
+  background: var(--k-color-fill-tertiary);
+}
+.k-table__action-item.is-danger {
+  color: var(--k-color-error);
+}
+.k-table__action-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.k-table__cell .k-input {
+  width: 100%;
+}
+.k-table__editor {
+  display: block;
+  width: 100%;
 }
 .k-table .k-table__cell.is-align-center {
   text-align: center;
@@ -2736,6 +3701,20 @@ defineSlots<{
 }
 .k-table__toolbar-start {
   flex: 1;
+}
+.k-table__search {
+  height: 32px;
+  min-width: 200px;
+  padding: 0 10px;
+  border: 1px solid var(--k-color-border);
+  border-radius: var(--k-border-radius);
+  background: var(--k-color-bg-container);
+  color: var(--k-color-text);
+  font-size: var(--k-font-size-sm);
+  outline: none;
+}
+.k-table__search:focus-visible {
+  border-color: var(--k-color-primary);
 }
 .k-table__column-setting {
   display: flex;

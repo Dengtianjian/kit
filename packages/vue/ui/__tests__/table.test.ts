@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  applyColumnOrder,
   buildHeaderRows,
   buildSpanPlan,
   buildTreeNodes,
@@ -141,6 +142,24 @@ test('grouped columns flatten leaves with stable keys and parent titles', () => 
   assert.equal(leaves[1].depth, 1);
   assert.deepEqual(leaves[1].parents, ['评分']);
   assert.equal(leaves[0].column, grouped[0]);
+});
+
+test('column order reorders leaves and keeps groups with their first leaf', () => {
+  const grouped: KTableColumn<Row>[] = [
+    { key: 'name', dataIndex: 'name', title: '名称' },
+    {
+      key: 'meta',
+      title: '评分',
+      children: [
+        { key: 'score', dataIndex: 'score', title: '分数' },
+        { key: 'team', dataIndex: 'team.title', title: '团队' },
+      ],
+    },
+  ];
+  const next = applyColumnOrder(grouped, ['team', 'score', 'name']);
+  assert.deepEqual(next.map(column => column.key), ['meta', 'name']);
+  assert.deepEqual(next[0].children?.map(column => column.key), ['team', 'score']);
+  assert.deepEqual(applyColumnOrder(grouped, []).map(column => column.key), ['name', 'meta']);
 });
 
 test('visibility filter drops hidden leaves and empty groups', () => {

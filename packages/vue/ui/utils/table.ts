@@ -21,6 +21,22 @@ export interface KTableCellContext<T> {
   column: KTableColumn<T>;
 }
 
+export interface KTableCellEditContext<T> extends KTableCellContext<T> {
+  /** 提交新值（仅发 cellEdit，不直接改数据） */
+  commit: (value: unknown) => void;
+  cancel: () => void;
+}
+
+export interface KTableRowAction<T = unknown> {
+  key?: string;
+  label: string;
+  /** 内置图标：view / edit / copy / remove / more；缺省用 label 文本 */
+  icon?: string;
+  danger?: boolean;
+  disabled?: boolean | ((row: T) => boolean);
+  onClick?: (context: { row: T; index: number; event: MouseEvent }) => void;
+}
+
 export interface KTableColumn<T = Record<string, unknown>> {
   key?: string;
   title?: string;
@@ -35,6 +51,12 @@ export interface KTableColumn<T = Record<string, unknown>> {
   filterMultiple?: boolean;
   filterMethod?: (value: unknown, row: T) => boolean;
   render?: (ctx: KTableCellContext<T>) => VNodeChild;
+  /** 单元格编辑：进入编辑态后默认渲染 KInput，可用 editRender 自定义 */
+  editable?: boolean;
+  editRender?: (ctx: KTableCellEditContext<T>) => VNodeChild;
+  /** 操作列：直排按钮，超出 maxActions 收进「更多」 */
+  actions?: KTableRowAction<T>[];
+  maxActions?: number;
   /** 分组表头：有 children 的列自己不渲染数据单元格 */
   children?: KTableColumn<T>[];
   /** 静态隐藏（优先于 columnVisibility） */
@@ -239,6 +261,29 @@ export function flattenLeafColumns<T>(
     });
   }
   return out;
+}
+
+/** 按叶子 key 的顺序重排列；分组跟随首个叶子，未出现在 order 里的列保持原相对顺序 */
+export function applyColumnOrder<T>(
+  columns: readonly KTableColumn<T>[],
+  order: readonly string[],
+): KTableColumn<T>[] {
+  if (!order.length) return [...columns];
+  const rank = new Map(order.map((key, index) => [key, index]));
+  const rankOf = (column: KTableColumn<T>): number => {
+    const ranks = flattenLeafColumns([column])
+      .map(leaf => rank.get(leaf.key))
+      .filter((value): value is number => value != null);
+    return ranks.length ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
+  };
+  const sortLevel = (list: readonly KTableColumn<T>[]): KTableColumn<T>[] =>
+    list
+      .map((column, index) => ({ column, index, rank: rankOf(column) }))
+      .sort((a, b) => a.rank - b.rank || a.index - b.index)
+      .map(({ column }) =>
+        column.children?.length ? { ...column, children: sortLevel(column.children) } : column,
+      );
+  return sortLevel(columns);
 }
 
 /** 可见列树：过滤隐藏列、清空空分组；叶子对象保持引用，便于用 Map 反查 key */
