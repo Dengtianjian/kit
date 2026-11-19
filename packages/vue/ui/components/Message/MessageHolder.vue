@@ -1,6 +1,12 @@
 <template>
   <Teleport to="body" defer>
-    <div v-if="svc.items.value.length" :class="popupClasses" :data-k-theme="popupTheme" data-part="root">
+    <TransitionGroup
+      tag="div"
+      name="k-message"
+      :class="popupClasses"
+      :data-k-theme="popupTheme"
+      data-part="root"
+    >
       <div
         v-for="it in svc.items.value"
         :key="it.id"
@@ -37,7 +43,7 @@
         ><component :is="KNode" :node="it.content" /></span>
         </template>
       </div>
-    </div>
+    </TransitionGroup>
   </Teleport>
 </template>
 
@@ -170,6 +176,19 @@ onBeforeUnmount(() => {
 @keyframes k-message-in {
   from { opacity: 0; transform: translateY(calc(var(--k-size) * -1)); }
   to { opacity: 1; transform: none; }
+}
+/* 离场：淡出 + 轻微上移；剩余条目由 TransitionGroup move 平滑补位 */
+.k-message-leave-active {
+  transition:
+    opacity var(--k-motion-duration-fast) var(--k-motion-ease-in-cubic),
+    transform var(--k-motion-duration-fast) var(--k-motion-ease-in-cubic);
+}
+.k-message-leave-to {
+  opacity: 0;
+  transform: translateY(calc(var(--k-size) * -0.5)) scale(0.96);
+}
+.k-message-move {
+  transition: transform var(--k-motion-duration-mid) var(--k-motion-ease-out-cubic);
 }
 
 @media (max-width: 767px) {
