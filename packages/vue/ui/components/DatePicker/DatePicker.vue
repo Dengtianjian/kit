@@ -776,6 +776,8 @@ const triggerAttrs = computed(() => ({
   'aria-expanded': open.value,
   'aria-haspopup': 'dialog',
   'aria-controls': open.value ? `${uid}-panel` : undefined,
+  'aria-activedescendant':
+    open.value && focusedTs.value != null ? `${uid}-cell-${focusedTs.value}` : undefined,
   'aria-disabled': props.disabled || undefined,
   'aria-invalid': formItem?.invalid.value || undefined,
   'aria-describedby': formItem?.describedBy.value,
@@ -830,9 +832,11 @@ const clearOn: KOnPack = {
 const cellAttrs = (cell: KDateCell) => {
   const lp = levelPicker(viewLevel.value, props.picker);
   return {
+    id: `${uid}-cell-${cell.ts}`,
     'data-part': 'cell',
     role: 'gridcell',
     'aria-selected': cell.selected,
+    'aria-current': cell.today ? 'date' : undefined,
     'aria-disabled': cell.disabled || undefined,
     'data-today': cell.today || undefined,
     'data-selected': cell.selected || undefined,

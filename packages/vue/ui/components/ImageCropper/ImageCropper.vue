@@ -3,7 +3,7 @@
     <KAlert
       class="k-cropper__alert"
       type="info"
-      message="拖动裁剪框移动，四角 + 四边中点调整大小；PC 按住 Shift + 鼠标拖动控制点临时锁定比例，也可选固定比例或打开「锁定比例」开关。"
+      message="拖动裁剪框移动，四角 + 四边中点调整大小；PC 按住 Shift + 鼠标拖动控制点临时锁定比例，也可选固定比例或打开「锁定比例」开关。键盘：方向键移动（Shift 加速），Alt + 方向键调整大小。"
     />
     <div ref="stage" class="k-cropper__stage">
       <img
@@ -18,39 +18,52 @@
       <div
         v-if="ready"
         class="k-cropper__box"
-        :style="boxStyle"
+        :class="classNames?.box"
+        :style="[boxStyle, styles?.box]"
+        role="group"
+        tabindex="0"
+        aria-label="裁剪框：方向键移动，Shift 加速，Alt 加方向键调整大小"
         @pointerdown="startDrag($event, 'move')"
+        @keydown="onBoxKeydown"
       >
         <span
+          aria-hidden="true"
           class="k-cropper__handle k-cropper__handle--nw" :class="classNames?.handle"
           @pointerdown.stop="startDrag($event, 'nw')"
         />
         <span
+          aria-hidden="true"
           class="k-cropper__handle k-cropper__handle--ne" :class="classNames?.handle"
           @pointerdown.stop="startDrag($event, 'ne')"
         />
         <span
+          aria-hidden="true"
           class="k-cropper__handle k-cropper__handle--sw" :class="classNames?.handle"
           @pointerdown.stop="startDrag($event, 'sw')"
         />
         <span
+          aria-hidden="true"
           class="k-cropper__handle k-cropper__handle--se" :class="classNames?.handle"
           @pointerdown.stop="startDrag($event, 'se')"
         />
         <template v-if="!aspectRatio">
           <span
+            aria-hidden="true"
             class="k-cropper__handle k-cropper__handle--n" :class="classNames?.handle"
             @pointerdown.stop="startDrag($event, 'n')"
           />
           <span
+            aria-hidden="true"
             class="k-cropper__handle k-cropper__handle--e" :class="classNames?.handle"
             @pointerdown.stop="startDrag($event, 'e')"
           />
           <span
+            aria-hidden="true"
             class="k-cropper__handle k-cropper__handle--s" :class="classNames?.handle"
             @pointerdown.stop="startDrag($event, 's')"
           />
           <span
+            aria-hidden="true"
             class="k-cropper__handle k-cropper__handle--w" :class="classNames?.handle"
             @pointerdown.stop="startDrag($event, 'w')"
           />
@@ -262,6 +275,60 @@ function clampBox() {
     Math.max(box.y, imageRect.y),
     imageRect.y + imageRect.h - box.h,
   );
+}
+
+function onBoxKeydown(e: KeyboardEvent) {
+  if (!ready.value) return;
+  const moveKeys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
+  if (!moveKeys.includes(e.key)) return;
+  e.preventDefault();
+  const step = e.shiftKey ? 10 : 1;
+  const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+  const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+  if (!e.altKey) {
+    box.x = Math.min(
+      Math.max(box.x + dx, imageRect.x),
+      imageRect.x + imageRect.w - box.w,
+    );
+    box.y = Math.min(
+      Math.max(box.y + dy, imageRect.y),
+      imageRect.y + imageRect.h - box.h,
+    );
+    return;
+  }
+  const ratio = props.aspectRatio ?? (ratioLocked.value ? lockedRatio.value : null);
+  const maxW = imageRect.x + imageRect.w - box.x;
+  const maxH = imageRect.y + imageRect.h - box.y;
+  let w = box.w;
+  let h = box.h;
+  if (ratio) {
+    if (dx) w = Math.min(Math.max(box.w + dx, MIN), maxW);
+    else h = Math.min(Math.max(box.h + dy, MIN), maxH);
+    if (dx) h = w / ratio;
+    else w = h * ratio;
+    if (w > maxW) {
+      w = maxW;
+      h = w / ratio;
+    }
+    if (h > maxH) {
+      h = maxH;
+      w = h * ratio;
+    }
+    if (w < MIN) {
+      w = MIN;
+      h = w / ratio;
+    }
+    if (h < MIN) {
+      h = MIN;
+      w = h * ratio;
+    }
+  } else {
+    w = Math.min(Math.max(box.w + dx, MIN), maxW);
+    h = Math.min(Math.max(box.h + dy, MIN), maxH);
+  }
+  box.w = w;
+  box.h = h;
+  clampBox();
 }
 
 const boxStyle = computed(() => ({
@@ -478,6 +545,11 @@ onBeforeUnmount(() => {
   border: 2px solid #fff;
   box-shadow: 0 0 0 9999px rgb(0 0 0 / 50%);
   cursor: move;
+  outline: none;
+}
+.k-cropper__box:focus-visible {
+  outline: 2px solid var(--k-color-primary);
+  outline-offset: 2px;
 }
 .k-cropper__handle {
   position: absolute;

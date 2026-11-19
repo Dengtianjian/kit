@@ -73,14 +73,14 @@
                 :style="styles?.fallback"
               >
                 <strong class="k-preview__fallback-name">{{ currentItem.name ?? currentItem.src }}</strong>
-                <p class="k-preview__unsupported">该文件类型暂不支持预览，可通过 renderers / #item 自定义</p>
+                <p class="k-preview__unsupported">暂不支持预览此类型，可通过 renderers / #item 自定义</p>
                 <a
                   class="k-preview__fallback-link"
                   :href="currentItem.src"
                   target="_blank"
                   rel="noopener"
                   download
-                >下载 / 新窗口打开</a>
+                >打开原文件</a>
               </div>
 
               <div
@@ -98,7 +98,7 @@
                 :style="styles?.fallback"
               >
                 <strong class="k-preview__fallback-name">{{ currentItem.name ?? currentItem.src }}</strong>
-                <p class="k-preview__unsupported">媒体加载失败</p>
+                <p class="k-preview__unsupported">加载失败，请检查文件地址或重试</p>
                 <div class="k-preview__fallback-actions">
                   <button type="button" class="k-preview__fallback-btn" @click.stop="retryMedia">重新加载</button>
                   <a class="k-preview__fallback-link" :href="currentItem.src" target="_blank" rel="noopener">打开原文件</a>
@@ -173,8 +173,16 @@
             ref="thumbsEl"
             data-part="thumbnails"
             class="k-preview__thumbs"
-            :class="classNames?.thumbnails"
+            :class="[
+              classNames?.thumbnails,
+              {
+                'is-scrollable': thumbEdges.scrollable,
+                'fade-l': thumbEdges.scrollable && !thumbEdges.atStart,
+                'fade-r': thumbEdges.scrollable && !thumbEdges.atEnd,
+              },
+            ]"
             :style="styles?.thumbnails"
+            @scroll.passive="onThumbScroll"
           >
             <button
               v-for="(item, index) in items"
@@ -204,7 +212,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useSlots, watch } from 'vue';
 import type { CSSProperties, Ref, VNodeChild } from 'vue';
 import { useKConfig } from '../../composables/useKConfig';
 import { useCustomRender } from '../../composables/useCustomRender';
@@ -404,6 +412,21 @@ const thumbsEl = ref<HTMLElement | null>(null);
 const mediaState = ref<'loading' | 'ready' | 'error'>('ready');
 const retryTick = ref(0);
 const thumbErrors = ref<Set<number>>(new Set());
+const thumbEdges = reactive({ scrollable: false, atStart: true, atEnd: true });
+
+function syncThumbEdges() {
+  const box = thumbsEl.value;
+  if (!box) {
+    thumbEdges.scrollable = thumbEdges.atStart = thumbEdges.atEnd = true;
+    return;
+  }
+  thumbEdges.scrollable = box.scrollWidth > box.clientWidth + 1;
+  thumbEdges.atStart = box.scrollLeft <= 1;
+  thumbEdges.atEnd = box.scrollLeft + box.clientWidth >= box.scrollWidth - 1;
+}
+function onThumbScroll() {
+  syncThumbEdges();
+}
 
 function isMediaType(type: string) {
   return type === 'image' || type === 'video';
@@ -798,7 +821,7 @@ const imageStyle = computed<CSSProperties>(() => ({
 const videoAttrs = computed(() => ({
   'data-part': 'video',
   src: currentItem.value?.src,
-  poster: currentItem.value?.poster,
+  poster: currentItem.value?.poster ?? currentItem.value?.thumbnail,
   controls: true,
   playsinline: true,
   preload: 'metadata',
@@ -829,7 +852,10 @@ watch([safeCurrent, openModel, showThumbs], async () => {
     left: el.offsetLeft - (box.clientWidth - el.offsetWidth) / 2,
     behavior: 'smooth',
   });
+  syncThumbEdges();
 });
+onMounted(() => window.addEventListener('resize', syncThumbEdges));
+onBeforeUnmount(() => window.removeEventListener('resize', syncThumbEdges));
 
 const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KPreviewRenderScope>(
   () => props.render,
@@ -1136,6 +1162,21 @@ defineExpose({ open: () => setOpen(true), close, next, prev, setCurrent, setScal
 }
 .k-preview__thumbs::-webkit-scrollbar {
   display: none;
+}
+.k-preview__thumbs.is-scrollable.fade-l {
+  mask-image: linear-gradient(to right, transparent, #000 24px);
+}
+.k-preview__thumbs.is-scrollable.fade-r {
+  mask-image: linear-gradient(to left, transparent, #000 24px);
+}
+.k-preview__thumbs.is-scrollable.fade-l.fade-r {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 24px,
+    #000 calc(100% - 24px),
+    transparent
+  );
 }
 .k-preview__thumb {
   flex: none;

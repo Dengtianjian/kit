@@ -15,10 +15,10 @@
     <div class="k-daterange__trigger">
       <input
         ref="startInputEl"
+        v-bind="triggerAttrs('start')"
         class="k-daterange__input"
         :class="[classNames?.field, { 'is-active': activeEdge === 'start' }]"
         :style="styles?.field"
-        :id="id ? `${id}-start` : undefined"
         readonly
         autocomplete="off"
         role="combobox"
@@ -36,10 +36,10 @@
       <span class="k-daterange__separator" aria-hidden="true">→</span>
       <input
         ref="endInputEl"
+        v-bind="triggerAttrs('end')"
         class="k-daterange__input"
         :class="[classNames?.field, { 'is-active': activeEdge === 'end' }]"
         :style="styles?.field"
-        :id="id ? `${id}-end` : undefined"
         readonly
         autocomplete="off"
         role="combobox"
@@ -135,6 +135,7 @@
                     <span
                       v-for="cell in row"
                       :key="cell.ts"
+                      v-bind="cellAttrs(cell)"
                       role="gridcell"
                       class="k-daterange__cell"
                       :class="[cellClasses(cell), classNames?.cell]"
@@ -517,7 +518,9 @@ function openAt(edge: 'start' | 'end') {
     : edge === 'end'
       ? kDayjs(base).subtract(1, 'month').valueOf()
       : base;
-  focusedTs.value = edge === 'start' ? draftStart.value : (draftEnd.value ?? draftStart.value);
+  focusedTs.value =
+    (edge === 'start' ? draftStart.value : (draftEnd.value ?? draftStart.value)) ??
+    dayTs(Date.now());
   open.value = true;
   void nextTick(() => place());
 }
@@ -725,6 +728,8 @@ const triggerAttrs = (edge: 'start' | 'end') => ({
   'aria-haspopup': 'dialog',
   'aria-expanded': open.value,
   'aria-controls': open.value ? `${uid}-panel` : undefined,
+  'aria-activedescendant':
+    open.value && focusedTs.value != null ? `${uid}-cell-${focusedTs.value}` : undefined,
   'aria-invalid': formItem?.invalid.value || undefined,
   'aria-describedby': formItem?.describedBy.value,
   'aria-label': edge === 'start' ? '开始日期' : '结束日期',
@@ -746,9 +751,11 @@ const panelAttrs = computed(() => ({
   'aria-label': '日期范围选择',
 }));
 const cellAttrs = (cell: KDateRangeCell) => ({
+  id: `${uid}-cell-${cell.ts}`,
   'data-part': 'cell',
   role: 'gridcell',
   'aria-selected': cell.rangeStart || cell.rangeEnd,
+  'aria-current': cell.today ? 'date' : undefined,
   'aria-disabled': cell.disabled || undefined,
   'data-in-range': cell.inRange || undefined,
   'data-range-start': cell.rangeStart || undefined,

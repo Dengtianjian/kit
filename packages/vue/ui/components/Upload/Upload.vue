@@ -38,20 +38,20 @@
             :style="styles?.actions"
             v-on="overlayOn(f)"
           >
-            <span v-if="showActions" role="button" class="k-upload__card-overlay-action" aria-label="预览" title="预览" v-on="previewOn(f)">
+            <span v-if="showActions" role="button" tabindex="0" class="k-upload__card-overlay-action" aria-label="预览" title="预览" v-on="previewOn(f)">
               <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8Z" /><circle cx="8" cy="8" r="1.8" /></svg>
             </span>
-            <span v-if="showActions" role="button" class="k-upload__card-overlay-action" aria-label="删除" title="删除" v-on="removeOn(f)">
+            <span v-if="showActions" role="button" tabindex="0" class="k-upload__card-overlay-action" aria-label="删除" title="删除" v-on="removeOn(f)">
               <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4" /></svg>
             </span>
-            <span v-if="clickToUpload" role="button" class="k-upload__card-overlay-action" aria-label="重新上传" title="重新上传" v-on="thumbOn(f)">
+            <span v-if="clickToUpload" role="button" tabindex="0" class="k-upload__card-overlay-action" aria-label="重新上传" title="重新上传" v-on="thumbOn(f)">
               <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M13 2.5V5h-2.5" /></svg>
             </span>
           </span>
           <span v-if="f.status === 'uploading'" class="k-upload__card-mask">
             <span>{{ f.percent ?? 0 }}%</span>
           </span>
-          <span v-else-if="f.status === 'error'" class="k-upload__card-mask is-error" v-on="retryOn(f)">重试</span>
+          <span v-else-if="f.status === 'error'" class="k-upload__card-mask is-error" role="button" tabindex="0" aria-label="重试" v-on="retryOn(f)">重试</span>
         </div>
         <div
           v-if="canAdd"
@@ -123,6 +123,8 @@
                 class="k-upload__name"
                 :class="classNames?.name"
                 :style="styles?.name"
+                role="button"
+                tabindex="0"
                 v-on="previewOn(f)"
               >{{ f.name }}</span>
               <div v-if="f.status === 'uploading'" class="k-upload__progress" :class="classNames?.progress" :style="styles?.progress">
@@ -134,6 +136,7 @@
               v-if="clickToUpload"
               class="k-upload__action k-upload__replace-action"
               role="button"
+              tabindex="0"
               aria-label="重新上传"
               title="重新上传"
               v-on="thumbOn(f)"
@@ -145,6 +148,7 @@
                 v-if="f.status === 'error'"
                 class="k-upload__action"
                 role="button"
+                tabindex="0"
                 aria-label="重试"
                 title="重试"
                 v-on="retryOn(f)"
@@ -155,6 +159,7 @@
                 v-if="showActions"
                 class="k-upload__action"
                 role="button"
+                tabindex="0"
                 aria-label="删除"
                 title="删除"
                 v-on="removeOn(f)"
@@ -1518,29 +1523,39 @@ const itemDragOn = (file: KUploadFileItem): KOnPack => ({
   drop: (e) => onItemDrop(file, e as DragEvent),
   dragend: () => resetSortDrag(),
 });
+function onActivateKey(e: KeyboardEvent, run: () => void) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  e.stopPropagation();
+  run();
+}
 const removeOn = (file: KUploadFileItem): KOnPack => ({
   click: (e) => {
     e.stopPropagation();
     void remove(file);
   },
+  keydown: (e) => onActivateKey(e as KeyboardEvent, () => void remove(file)),
 });
 const retryOn = (file: KUploadFileItem): KOnPack => ({
   click: (e) => {
     e.stopPropagation();
     retry(file);
   },
+  keydown: (e) => onActivateKey(e as KeyboardEvent, () => retry(file)),
 });
 const previewOn = (file: KUploadFileItem): KOnPack => ({
   click: (e) => {
     e.stopPropagation();
     preview(file);
   },
+  keydown: (e) => onActivateKey(e as KeyboardEvent, () => preview(file)),
 });
 const thumbOn = (file: KUploadFileItem): KOnPack => ({
   click: (e) => {
     e.stopPropagation();
     onThumbClick(file);
   },
+  keydown: (e) => onActivateKey(e as KeyboardEvent, () => onThumbClick(file)),
 });
 /* 卡片蒙层空白处点击 = 预览（有操作栏时）；操作项各自 stopPropagation */
 const overlayOn = (file: KUploadFileItem): KOnPack => ({
@@ -2053,5 +2068,13 @@ defineExpose({ openSelect, addFiles, upload, remove, retry, abort, preview, reor
   .k-upload__replace-action {
     display: inline-flex;
   }
+}
+.k-upload__card-overlay-action:focus-visible,
+.k-upload__action:focus-visible,
+.k-upload__name:focus-visible,
+.k-upload__card-mask:focus-visible {
+  outline: 2px solid var(--k-color-primary);
+  outline-offset: 2px;
+  border-radius: var(--k-border-radius-sm);
 }
 </style>
