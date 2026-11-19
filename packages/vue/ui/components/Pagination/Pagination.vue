@@ -66,7 +66,7 @@
       :style="styles?.sizeChanger"
       :model-value="pageSize"
       :options="sizeOptions"
-      size="sm"
+      :size="controlSize"
       :disabled="disabled"
       aria-label="每页条数"
       @update:model-value="changePageSize"
@@ -76,7 +76,7 @@
       <KInput
         v-model="jumpText"
         class="k-pagination__jump-input"
-        size="sm"
+        :size="controlSize"
         inputmode="numeric"
         :disabled="disabled"
         aria-label="跳转页码"
@@ -94,6 +94,7 @@ import type { CSSProperties } from 'vue';
 import KSelect from '../Select/Select.vue';
 import KInput from '../Input/Input.vue';
 import { buildPageItems, clampPage, totalPagesOf } from '../../utils/pagination';
+import type { KSize } from '../../utils/size';
 
 defineOptions({ name: 'KPagination' });
 
@@ -109,7 +110,7 @@ interface KPaginationProps {
   simple?: boolean;
   disabled?: boolean;
   hideOnSinglePage?: boolean;
-  size?: 'sm' | 'md';
+  size?: Extract<KSize, 'sm' | 'md' | 'lg'>;
   classNames?: Partial<Record<PaginationPart, string>>;
   styles?: Partial<Record<PaginationPart, CSSProperties>>;
 }
@@ -134,6 +135,8 @@ const pageSize = defineModel<number>('pageSize', { default: 10 });
 const rootAttrs = { 'data-part': 'root' };
 
 const pageCount = computed(() => totalPagesOf(props.total, pageSize.value));
+/** 页码按钮之外的输入控件沿用原档位：sm→sm、md→sm（保持历史观感）、lg→md */
+const controlSize = computed(() => (props.size === 'lg' ? 'md' : 'sm'));
 const page = computed(() => clampPage(current.value, pageCount.value));
 const pageItems = computed(() => buildPageItems(page.value, pageCount.value));
 const sizeOptions = computed(() =>
@@ -196,6 +199,11 @@ function applyJump() {
 .k-pagination--sm {
   --k-pagination-height: var(--k-control-height-xs);
   gap: var(--k-size-xs);
+}
+.k-pagination--lg {
+  --k-pagination-height: var(--k-control-height-lg);
+  gap: var(--k-size);
+  font-size: var(--k-font-size-lg);
 }
 .k-pagination__pages {
   display: inline-flex;

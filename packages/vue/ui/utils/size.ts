@@ -1,3 +1,6 @@
+/** 全组件统一尺寸档：只允许 xs / sm / md / lg（间距轴另见 KSpaceSize） */
+export type KSize = 'xs' | 'sm' | 'md' | 'lg';
+
 /** 间距轴名 → token 阶梯变量（Space/Flex/Row 共用，规格 components/space.md） */
 
 export type KSpaceSize = 'xxs' | 'xs' | 'sm' | 'md' | 'lg' | number;
