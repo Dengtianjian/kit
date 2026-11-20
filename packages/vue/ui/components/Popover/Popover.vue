@@ -21,7 +21,7 @@
       v-on="popupOn"
     >
       <span v-if="arrow" class="k-popover__arrow" aria-hidden="true" />
-      <div class="k-popover__card">
+      <div class="k-popover__card" :class="{ 'is-closable': closable }">
         <div v-if="title || $slots.title" :id="titleId" data-part="title" class="k-popover__title" :class="classNames?.title" :style="styles?.title">
           <slot name="title">{{ title }}</slot>
         </div>
@@ -252,11 +252,12 @@ defineSlots<{
   --k-popover-color: var(--k-color-text);
   --k-popover-title-color: var(--k-color-text);
   --k-popover-radius: var(--k-border-radius-lg);
-  --k-popover-padding: var(--k-size-sm);
-  --k-popover-font-size: var(--k-font-size);
-  --k-popover-title-size: var(--k-popup-title-size);
-  --k-popover-close-size: var(--k-font-size);
-  --k-popover-min-width: calc(var(--k-size) * 15);
+  --k-popover-padding: var(--k-size);
+  --k-popover-font-size: var(--k-font-size-lg);
+  --k-popover-title-size: calc(var(--k-font-size-lg) + 2px);
+  --k-popover-close-size: var(--k-font-size-lg);
+  --k-popover-close-box: calc(var(--k-popover-close-size) + var(--k-size-xxs) * 2);
+  --k-popover-min-width: calc(var(--k-size) * 13);
   --k-popover-max-width: calc(var(--k-size) * 40);
   --k-popover-arrow-size: 8px;
 
@@ -264,18 +265,18 @@ defineSlots<{
   font-family: inherit;
 }
 .k-popover--sm {
-  --k-popover-padding: var(--k-size-xs);
-  --k-popover-font-size: var(--k-font-size-sm);
-  --k-popover-title-size: var(--k-font-size);
-  --k-popover-close-size: var(--k-font-size-sm);
+  --k-popover-padding: var(--k-size-sm);
+  --k-popover-font-size: var(--k-font-size);
+  --k-popover-title-size: var(--k-font-size-lg);
+  --k-popover-close-size: var(--k-font-size);
   --k-popover-min-width: calc(var(--k-size) * 12);
   --k-popover-max-width: calc(var(--k-size) * 32);
 }
 .k-popover--lg {
-  --k-popover-padding: var(--k-size);
-  --k-popover-font-size: var(--k-font-size-lg);
-  --k-popover-title-size: var(--k-font-size-lg);
-  --k-popover-close-size: var(--k-font-size-lg);
+  --k-popover-padding: var(--k-size-md);
+  --k-popover-font-size: calc(var(--k-font-size-lg) + 2px);
+  --k-popover-title-size: var(--k-font-size-xl);
+  --k-popover-close-size: calc(var(--k-font-size-lg) + 2px);
   --k-popover-min-width: calc(var(--k-size) * 18);
   --k-popover-max-width: calc(var(--k-size) * 48);
 }
@@ -289,6 +290,7 @@ defineSlots<{
   position: relative;
   min-width: var(--k-popover-min-width);
   max-width: var(--k-popover-max-width);
+  padding: var(--k-popover-padding);
   border-radius: var(--k-popover-radius);
   background-color: var(--k-popover-bg);
   color: var(--k-popover-color);
@@ -297,14 +299,19 @@ defineSlots<{
   line-height: var(--k-line-height);
 }
 .k-popover__title {
-  padding: var(--k-popover-padding) var(--k-popover-padding) 0;
   color: var(--k-popover-title-color);
   font-size: var(--k-popover-title-size);
-  font-weight: var(--k-popup-title-weight);
+  font-weight: var(--k-font-weight-base);
+}
+.k-popover__card.is-closable .k-popover__title {
+  padding-inline-end: calc(var(--k-popover-close-size) + var(--k-size-xs));
 }
 .k-popover__close {
   position: absolute;
-  top: var(--k-popover-padding);
+  top: calc(
+    var(--k-popover-padding) +
+      (var(--k-line-height) * var(--k-popover-font-size) - var(--k-popover-close-box)) / 2
+  );
   right: var(--k-popover-padding);
   display: inline-flex;
   padding: var(--k-size-xxs);
@@ -314,12 +321,24 @@ defineSlots<{
   font-size: var(--k-popover-close-size);
   cursor: pointer;
 }
+.k-popover__card:has(.k-popover__title) .k-popover__close {
+  top: calc(
+    var(--k-popover-padding) +
+      (var(--k-line-height) * var(--k-popover-title-size) - var(--k-popover-close-box)) / 2
+  );
+}
 .k-popover__close:hover {
   color: var(--k-color-text);
 }
 .k-popover__content {
-  padding: var(--k-popover-padding);
   word-wrap: break-word;
+}
+/* 关闭钮绝对定位在右上，内容区（含无标题态）预留同宽避让 */
+.k-popover__card.is-closable .k-popover__content {
+  padding-inline-end: calc(var(--k-popover-close-size) + var(--k-size-xs));
+}
+.k-popover__title ~ .k-popover__content {
+  margin-top: var(--k-size-xxs);
 }
 
 /* 箭头：elevated 实色浅底画在卡片之下会被卡片 own 阴影糊掉（= 「箭头出现一下自己消失」的根因）；
@@ -375,5 +394,11 @@ defineSlots<{
 @keyframes k-popover-zoom-out {
   from { opacity: 1; transform: none; }
   to { opacity: 0; transform: scale(0.85); }
+}
+
+@media (max-width: 767px) {
+  .k-popover__card {
+    max-width: calc(100vw - 24px);
+  }
 }
 </style>

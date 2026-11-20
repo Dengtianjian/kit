@@ -322,6 +322,11 @@ defineSlots<{
   width: 50%;
   overflow: hidden;
   color: var(--k-rate-active-color);
+  white-space: nowrap;
+}
+/* 半星覆盖层只有半宽，子元素不能跟着收缩，否则会画出一个小星星 */
+.k-rate__character--half > * {
+  flex: none;
 }
 .k-rate--error { --k-rate-active-color: var(--k-color-error); }
 .k-rate--warning { --k-rate-active-color: var(--k-color-warning); }

@@ -127,7 +127,7 @@ const emit = defineEmits<{
   'update:open': [open: boolean];
 }>();
 
-const buttonSize = computed<'xs' | 'md'>(() => (props.size === 'lg' ? 'md' : 'xs'));
+const buttonSize = computed(() => (props.size === 'sm' ? 'xs' : props.size));
 const innerOpen = ref(false);
 // Vue 对 Boolean prop 做 absent→false 强转，`props.open !== undefined` 判受控恒真；改查原始 vnode props
 const instance = getCurrentInstance()!;
