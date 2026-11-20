@@ -34,7 +34,7 @@ export interface KTableRowAction<T = unknown> {
   icon?: string;
   danger?: boolean;
   disabled?: boolean | ((row: T) => boolean);
-  onClick?: (context: { row: T; index: number; event: MouseEvent }) => void;
+  onClick?: (context: { row: T; index: number; event?: MouseEvent }) => void;
 }
 
 export interface KTableColumn<T = Record<string, unknown>> {

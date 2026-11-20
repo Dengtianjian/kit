@@ -26,6 +26,9 @@
     ]"
     :style="[rootStyle, styles?.root]"
   >
+    <div v-if="$slots.header" class="k-table__header" :class="classNames?.header" :style="styles?.header">
+      <slot name="header" :columns="visibleColumns" :rows="processedRows" />
+    </div>
     <div
       v-if="toolbarVisible"
       class="k-table__toolbar"
@@ -703,6 +706,9 @@
         </div>
       </div>
     </div>
+    <div v-if="$slots.footer" class="k-table__footer" :class="classNames?.footer" :style="styles?.footer">
+      <slot name="footer" :columns="visibleColumns" :rows="processedRows" />
+    </div>
     <div v-if="showBottomPagination" class="k-table__pagination" :class="[classNames?.pagination, `is-${paginationPlacement.align}`]" :style="styles?.pagination">
       <KPagination
         v-model:current="current"
@@ -734,10 +740,33 @@ import {
   useSlots,
   watch,
 } from 'vue';
-import type { ComponentPublicInstance, CSSProperties, PropType, VNodeChild } from 'vue';
+import type { Component, ComponentPublicInstance, CSSProperties, PropType, VNodeChild } from 'vue';
 import KCheckbox from '../Checkbox/Checkbox.vue';
 import KRadio from '../Radio/Radio.vue';
 import KPopover from '../Popover/Popover.vue';
+import KDropdown from '../Dropdown/Dropdown.vue';
+import {
+  IconCopy,
+  IconDots,
+  IconDotsVertical,
+  IconEye,
+  IconPencil,
+  IconTrash,
+} from '@tabler/icons-vue';
+/* 菜单图标统一按 1em 输出，尺寸由所在元素的 font-size 决定 */
+function tableActionIcon(icon: Component): Component {
+  return defineComponent({
+    name: 'KTableActionIcon',
+    setup: () => () => h(icon, { size: '1em' }),
+  });
+}
+const ACTION_ICONS: Record<string, Component> = {
+  view: tableActionIcon(IconEye),
+  edit: tableActionIcon(IconPencil),
+  copy: tableActionIcon(IconCopy),
+  remove: tableActionIcon(IconTrash),
+  more: tableActionIcon(IconDots),
+};
 import KButton from '../Button/Button.vue';
 import KSpin from '../Spin/Spin.vue';
 import KInput from '../Input/Input.vue';
@@ -858,6 +887,7 @@ export interface KTableRowSelection<T> {
 
 type TablePart =
   | 'root'
+  | 'header'
   | 'toolbar'
   | 'columnSetting'
   | 'wrap'
@@ -868,6 +898,7 @@ type TablePart =
   | 'stack'
   | 'scrollbar'
   | 'loadMore'
+  | 'footer'
   | 'pagination';
 
 interface KTableProps<T> {
@@ -3271,8 +3302,24 @@ const KBodyCellInner = defineComponent({
       if (rest.length) {
         items.push(
           h(
-            KPopover,
-            { trigger: 'click', placement: 'bottomRight', arrow: false },
+            KDropdown,
+            {
+              trigger: 'click',
+              placement: 'bottomRight',
+              menuLabel: '更多操作',
+              items: rest.map(action => ({
+                key: action.key ?? action.label,
+                label: action.label,
+                icon: ACTION_ICONS[action.icon ?? ''] ?? undefined,
+                disabled: disabledOf(action),
+                danger: action.danger,
+              })),
+              onSelect: (key: string | number) => {
+                const action = rest.find(item => (item.key ?? item.label) === key);
+                if (!action || disabledOf(action)) return;
+                action.onClick?.({ row: cellProps.row, index: cellProps.index });
+              },
+            },
             {
               trigger: () =>
                 h(
@@ -3283,34 +3330,20 @@ const KBodyCellInner = defineComponent({
                     title: '更多',
                     'aria-label': '更多操作',
                   },
-                  [renderActionIcon({ label: '更多', icon: 'more' })],
-                ),
-              default: () =>
-                h(
-                  'div',
-                  { class: 'k-table__actions-more' },
-                  rest.map(action =>
-                    h(
-                      'button',
-                      {
-                        type: 'button',
-                        class: ['k-table__action-item', { 'is-danger': action.danger }],
-                        disabled: disabledOf(action),
-                        onClick: (event: MouseEvent) => {
-                          event.stopPropagation();
-                          if (disabledOf(action)) return;
-                          action.onClick?.({ row: cellProps.row, index: cellProps.index, event });
-                        },
-                      },
-                      [renderActionIcon(action), h('span', action.label)],
-                    ),
-                  ),
+                  [h(IconDotsVertical, { size: '1em' })],
                 ),
             },
           ),
         );
       }
-      return h('span', { class: 'k-table__actions' }, items);
+      return h(
+        'span',
+        {
+          class: 'k-table__actions',
+          onClick: (event: MouseEvent) => event.stopPropagation(),
+        },
+        items,
+      );
     }
     const GRIP_SVG =
       '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
@@ -3460,8 +3493,8 @@ const KHeadCell = defineComponent({
     return () => {
       const cell = headProps.cell;
       const key = cell.leafKey ?? '';
-      const title = slots.header
-        ? slots.header({ column: cell.column, index: leafIndex(cell.leafKey) })
+      const title = slots.columnHeader
+        ? slots.columnHeader({ column: cell.column, index: leafIndex(cell.leafKey) })
         : cell.column.title;
       const sorter = h(
         'span',
@@ -3951,11 +3984,16 @@ defineSlots<{
   border-radius: var(--k-border-radius-sm);
   background: transparent;
   color: var(--k-color-text-secondary);
+  font-size: 14px;
   cursor: pointer;
 }
 .k-table__action:hover:not(:disabled) {
   background: var(--k-color-fill-tertiary);
   color: var(--k-color-text);
+}
+.k-table__action svg {
+  width: 1em;
+  height: 1em;
 }
 .k-table__action:disabled {
   opacity: 0.4;
@@ -3967,35 +4005,6 @@ defineSlots<{
 .k-table__action-text {
   padding: 0 4px;
   font-size: 12px;
-}
-.k-table__actions-more {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 120px;
-}
-.k-table__action-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: var(--k-border-radius-sm);
-  background: transparent;
-  color: var(--k-color-text);
-  font-size: 13px;
-  text-align: start;
-  cursor: pointer;
-}
-.k-table__action-item:hover:not(:disabled) {
-  background: var(--k-color-fill-tertiary);
-}
-.k-table__action-item.is-danger {
-  color: var(--k-color-error);
-}
-.k-table__action-item:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 .k-table__cell .k-input {
   width: 100%;
