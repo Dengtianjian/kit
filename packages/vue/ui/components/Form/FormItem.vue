@@ -297,6 +297,10 @@ defineSlots<{
   flex-direction: column;
   gap: var(--k-size-xxs);
 }
+.k-form--horizontal .k-form-item__control,
+.k-form--inline .k-form-item__control {
+  align-self: center;
+}
 .k-form--inline .k-form-item__control {
   width: auto;
   min-width: calc(var(--k-control-height) * 6);
@@ -327,6 +331,10 @@ defineSlots<{
   }
   .k-form--inline {
     flex-direction: column;
+  }
+  .k-form--horizontal .k-form-item__control,
+  .k-form--inline .k-form-item__control {
+    align-self: stretch;
   }
   .k-form--inline .k-form-item__control {
     width: 100%;

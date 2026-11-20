@@ -608,7 +608,7 @@ if (import.meta.env.DEV) {
   flex-direction: column;
   height: auto;
   min-height: var(--k-button-height);
-  padding-block: var(--k-size-xxs);
+  padding-block: calc(var(--k-size-xxs) + 2px);
   gap: var(--k-size-xxs);
 }
 .k-button--icon-bottom :is(.k-button__icon, .k-button__spinner) { order: 1; }
