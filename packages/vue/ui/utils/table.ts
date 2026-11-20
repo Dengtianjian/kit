@@ -265,27 +265,78 @@ export function flattenLeafColumns<T>(
   return out;
 }
 
-/** 按叶子 key 的顺序重排列；分组跟随首个叶子，未出现在 order 里的列保持原相对顺序 */
+/** 跨分组换位：叶子 key → 目标分组 key 路径；缺省沿用列定义里的分组 */
+export type KTableColumnGroups = Record<string, string[]>;
+
+const groupPathKey = (path: readonly string[]) => path.join('\u0000');
+
+/**
+ * 按叶子 key 重排并支持跨分组换位；分组跟随首个叶子，
+ * 未出现在 order 里的列保持原相对顺序，未提供 groups 时叶子留在原分组
+ */
 export function applyColumnOrder<T>(
   columns: readonly KTableColumn<T>[],
   order: readonly string[],
+  groups: KTableColumnGroups = {},
 ): KTableColumn<T>[] {
-  if (!order.length) return [...columns];
-  const rank = new Map(order.map((key, index) => [key, index]));
-  const rankOf = (column: KTableColumn<T>): number => {
-    const ranks = flattenLeafColumns([column])
-      .map(leaf => rank.get(leaf.key))
-      .filter((value): value is number => value != null);
-    return ranks.length ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
+  if (!order.length && !Object.keys(groups).length) return [...columns];
+  const leaves: Array<{ column: KTableColumn<T>; key: string; chain: string[] }> = [];
+  const groupTemplates = new Map<string, KTableColumn<T>>();
+  let fallback = 0;
+  const walk = (list: readonly KTableColumn<T>[], chain: string[]) => {
+    for (const column of list) {
+      if (column.children?.length) {
+        const next = [...chain, column.key ?? column.title ?? `group-${fallback++}`];
+        groupTemplates.set(groupPathKey(next), column);
+        walk(column.children, next);
+        continue;
+      }
+      leaves.push({
+        column,
+        key: column.key ?? column.dataIndex ?? `column-${fallback++}`,
+        chain,
+      });
+    }
   };
-  const sortLevel = (list: readonly KTableColumn<T>[]): KTableColumn<T>[] =>
-    list
-      .map((column, index) => ({ column, index, rank: rankOf(column) }))
-      .sort((a, b) => a.rank - b.rank || a.index - b.index)
-      .map(({ column }) =>
-        column.children?.length ? { ...column, children: sortLevel(column.children) } : column,
-      );
-  return sortLevel(columns);
+  walk(columns, []);
+
+  if (order.length) {
+    const rank = new Map(order.map((key, index) => [key, index]));
+    leaves.sort(
+      (a, b) =>
+        (rank.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.key) ?? Number.MAX_SAFE_INTEGER),
+    );
+  }
+
+  const root: KTableColumn<T>[] = [];
+  const built = new Map<string, KTableColumn<T>>();
+  for (const leaf of leaves) {
+    const target = groups[leaf.key];
+    /* 目标路径逐级存在才生效，脏数据回退到列定义里的分组 */
+    const chain =
+      target && target.every((_, index) => groupTemplates.has(groupPathKey(target.slice(0, index + 1))))
+        ? target
+        : leaf.chain;
+    if (!chain.length) {
+      root.push(leaf.column);
+      continue;
+    }
+    let list = root;
+    let path: string[] = [];
+    for (const key of chain) {
+      path = [...path, key];
+      const id = groupPathKey(path);
+      let node = built.get(id);
+      if (!node) {
+        node = { ...(groupTemplates.get(id) as KTableColumn<T>), children: [] };
+        built.set(id, node);
+        list.push(node);
+      }
+      list = node.children as KTableColumn<T>[];
+    }
+    list.push(leaf.column);
+  }
+  return root;
 }
 
 /** 可见列树：过滤隐藏列、清空空分组；叶子对象保持引用，便于用 Map 反查 key */

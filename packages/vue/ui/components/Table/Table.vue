@@ -388,10 +388,13 @@
                 :class="[
                   cell.column.classNames?.header,
                   side === 'left' ? 'is-fixed-left' : 'is-fixed-right',
+                  { 'is-draggable': columnDraggable && !cell.isGroup },
                 ]"
                 :style="[overlayHeaderStyle(cell, rowIndex), cell.column.styles?.header]"
                 :aria-sort="cell.isGroup ? undefined : ariaSort(cell.leafKey)"
                 :data-column-key="cell.isGroup ? undefined : cell.leafKey"
+                :title="columnDraggable && !cell.isGroup ? '拖动调整列顺序' : undefined"
+                @pointerdown="onHeaderPointerDown(cell, $event)"
               >
                 <KHeadCell
                   :cell="cell"
@@ -944,9 +947,11 @@ interface KTableProps<T> {
   columnSetting?: boolean;
   /** 列顺序（叶子 key 数组）；不传走内部状态 */
   columnOrder?: string[];
+  /** 跨分组换位：叶子 key → 目标分组 key 路径；不传走内部状态 */
+  columnGroups?: Record<string, string[]>;
   /** 列宽覆盖（叶子 key → px）；不传走内部状态 */
   columnWidths?: Record<string, number>;
-  /** 拖动表头调整列顺序（同分组内） */
+  /** 拖动表头调整列顺序（同分组内换位，可拖入其它分组） */
   columnDraggable?: boolean;
   /** 拖动表头右边缘调整列宽 */
   columnResizable?: boolean;
@@ -1012,6 +1017,7 @@ const props = withDefaults(defineProps<KTableProps<T>>(), {
   scroll: undefined,
   columnSetting: false,
   columnOrder: undefined,
+  columnGroups: undefined,
   columnWidths: undefined,
   columnDraggable: false,
   columnResizable: false,
@@ -1069,6 +1075,7 @@ const columnVisibility = defineModel<Record<string, boolean>>('columnVisibility'
   default: () => ({}),
 });
 const columnOrder = defineModel<string[]>('columnOrder', { default: () => [] });
+const columnGroups = defineModel<Record<string, string[]>>('columnGroups', { default: () => ({}) });
 const columnWidths = defineModel<Record<string, number>>('columnWidths', { default: () => ({}) });
 const globalFilter = defineModel<string>('globalFilter', { default: '' });
 const editingCell = defineModel<{ rowKey: KTableRowKey; columnKey: string } | null>(
@@ -1090,7 +1097,9 @@ function expandedContent(row: T, index: number): VNodeChild {
   return null;
 }
 
-const orderedColumns = computed(() => applyColumnOrder(props.columns, columnOrder.value));
+const orderedColumns = computed(() =>
+  applyColumnOrder(props.columns, columnOrder.value, columnGroups.value),
+);
 const widthOverrides = computed(() => columnWidths.value ?? {});
 const {
   allLeaves,
@@ -2777,15 +2786,37 @@ interface ColumnDragState {
 }
 let columnDrag: ColumnDragState | null = null;
 
-function sameColumnGroup(sourceKey: string, targetKey: string) {
-  const all = allLeaves.value;
-  const source = all.find(leaf => leaf.key === sourceKey);
-  const destination = all.find(leaf => leaf.key === targetKey);
+function fixedOfKey(key: string) {
+  return allLeaves.value.find(leaf => leaf.key === key)?.column.fixed ?? null;
+}
+/** 叶子列所在分组路径（分组 key 数组）；找不到返回 null */
+function groupChainOf(
+  key: string,
+  list: readonly KTableColumn<T>[] = orderedColumns.value,
+  chain: string[] = [],
+): string[] | null {
+  for (const column of list) {
+    if (column.children?.length) {
+      const found = groupChainOf(key, column.children, [
+        ...chain,
+        column.key ?? column.title ?? '',
+      ]);
+      if (found) return found;
+      continue;
+    }
+    if (keyOfColumn(column) === key) return chain;
+  }
+  return null;
+}
+/** 跨分组可换位，但固定侧必须一致，避免列和分组表头分处两张表 */
+function canDropColumn(sourceKey: string, targetKey: string) {
   return Boolean(
-    source &&
-      destination &&
-      source.key !== destination.key &&
-      source.parents.join('/') === destination.parents.join('/'),
+    sourceKey &&
+      targetKey &&
+      sourceKey !== targetKey &&
+      fixedOfKey(sourceKey) === fixedOfKey(targetKey) &&
+      groupChainOf(sourceKey) &&
+      groupChainOf(targetKey),
   );
 }
 function onHeaderPointerDown(cell: KTableHeaderCell<T>, event: PointerEvent) {
@@ -2812,7 +2843,7 @@ function updateColumnDropLine(event: PointerEvent) {
   const target = (document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null)
     ?.closest<HTMLElement>('th[data-column-key]');
   const targetKey = target?.dataset.columnKey ?? null;
-  if (!targetKey || !sameColumnGroup(drag.key, targetKey)) {
+  if (!targetKey || !canDropColumn(drag.key, targetKey)) {
     drag.targetKey = null;
     if (drag.line) drag.line.style.display = 'none';
     return;
@@ -2878,13 +2909,24 @@ function onHeaderPointerUp(event: PointerEvent) {
   drag.line?.remove();
   if (!drag.active) return;
   const targetKey = drag.targetKey;
-  if (!targetKey || !sameColumnGroup(drag.key, targetKey)) return;
+  if (!targetKey || !canDropColumn(drag.key, targetKey)) return;
   const keys = allLeaves.value.map(leaf => leaf.key);
   const from = keys.indexOf(drag.key);
   keys.splice(from, 1);
   const targetIndex = keys.indexOf(targetKey);
   if (targetIndex < 0) return;
   keys.splice(drag.targetSide === 'end' ? targetIndex + 1 : targetIndex, 0, drag.key);
+  const targetChain = groupChainOf(targetKey) ?? [];
+  const sourceChain = groupChainOf(drag.key) ?? [];
+  if (targetChain.join('\u0000') === sourceChain.join('\u0000')) {
+    if (drag.key in columnGroups.value) {
+      const next = { ...columnGroups.value };
+      delete next[drag.key];
+      columnGroups.value = next;
+    }
+  } else {
+    columnGroups.value = { ...columnGroups.value, [drag.key]: [...targetChain] };
+  }
   columnOrder.value = keys;
 }
 function reflowColumnWidths() {

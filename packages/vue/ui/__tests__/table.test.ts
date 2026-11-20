@@ -163,6 +163,32 @@ test('column order reorders leaves and keeps groups with their first leaf', () =
   assert.deepEqual(applyColumnOrder(grouped, []).map(column => column.key), ['name', 'meta']);
 });
 
+test('column order moves leaves across groups', () => {
+  const grouped: KTableColumn<Row>[] = [
+    { key: 'name', dataIndex: 'name', title: '名称' },
+    { key: 'b', dataIndex: 'team', title: '团队' },
+    {
+      key: 'meta',
+      title: '评分',
+      children: [
+        { key: 'score', dataIndex: 'score', title: '分数' },
+        { key: 'team', dataIndex: 'team.title', title: '小组' },
+      ],
+    },
+  ];
+  const intoGroup = applyColumnOrder(grouped, ['name', 'score', 'b', 'team'], { b: ['meta'] });
+  assert.deepEqual(intoGroup.map(column => column.key), ['name', 'meta']);
+  assert.deepEqual(intoGroup[1].children?.map(column => column.key), ['score', 'b', 'team']);
+
+  const toTop = applyColumnOrder(grouped, ['name', 'score', 'team', 'b'], { team: [] });
+  assert.deepEqual(toTop.map(column => column.key), ['name', 'meta', 'team', 'b']);
+  assert.deepEqual(toTop[1].children?.map(column => column.key), ['score']);
+
+  const badPath = applyColumnOrder(grouped, ['name', 'score', 'team', 'b'], { score: ['ghost'] });
+  assert.deepEqual(badPath.map(column => column.key), ['name', 'meta', 'b']);
+  assert.deepEqual(badPath[1].children?.map(column => column.key), ['score', 'team']);
+});
+
 test('visibility filter drops hidden leaves and empty groups', () => {
   const grouped: KTableColumn<Row>[] = [
     { key: 'name', dataIndex: 'name', title: '名称' },
