@@ -4102,8 +4102,8 @@ defineSlots<{
   /* 固定列会盖在滚动单元格上，任何行的状态色都必须是实色 */
   --k-table-hover-bg: color-mix(in oklab, var(--k-color-text-base) 2.5%, var(--k-color-bg-container));
   --k-table-stripe-bg: color-mix(in oklab, var(--k-color-text-base) 1%, var(--k-color-bg-container));
-  /* 汇总行用主色轻染；展开行与页面同底，靠留白和分隔线区分 */
-  --k-table-summary-bg: color-mix(in oklab, var(--k-color-primary) 2%, var(--k-color-bg-container));
+  /* 汇总行用中性灰底，和表头/斑马纹同一色系，不使用主色轻染 */
+  --k-table-summary-bg: color-mix(in oklab, var(--k-color-text-base) 2%, var(--k-color-bg-container));
   --k-table-expanded-bg: var(--k-color-bg-container);
   /* 分隔线沿用全局次级边框色，和 Card 等组件保持一致 */
   --k-table-line: var(--k-color-border-secondary);
