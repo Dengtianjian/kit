@@ -2829,14 +2829,12 @@ function clearDropHighlight() {
     ?.querySelectorAll<HTMLElement>('.is-column-drop-group, .is-column-drop-top')
     .forEach(el => el.classList.remove(...DROP_HIGHLIGHT));
 }
-/** 落点提示：并入分组时高亮目标分组表头，落到顶层时高亮目标列头 */
-function highlightDropTarget(sourceKey: string, targetKey: string) {
+/** 落点提示：目标在分组内高亮该分组表头，目标在顶层高亮目标列头 */
+function highlightDropTarget(targetKey: string) {
   clearDropHighlight();
   const root = wrapEl.value?.closest<HTMLElement>('.k-table');
   if (!root) return;
   const targetChain = (groupChainOf(targetKey) ?? []).join('\u0000');
-  const sourceChain = (groupChainOf(sourceKey) ?? []).join('\u0000');
-  if (targetChain === sourceChain) return;
   if (targetChain) {
     const groups = [...root.querySelectorAll<HTMLElement>('th[data-group-leaves]')]
       .filter(th => (th.dataset.groupLeaves ?? '').split(' ').includes(targetKey))
@@ -2885,7 +2883,7 @@ function updateColumnDropLine(event: PointerEvent) {
     clearDropHighlight();
     return;
   }
-  highlightDropTarget(drag.key, targetKey);
+  highlightDropTarget(targetKey);
   const rect = target!.getBoundingClientRect();
   const side = event.clientX < rect.left + rect.width / 2 ? 'start' : 'end';
   drag.targetKey = targetKey;
@@ -2900,10 +2898,9 @@ function updateColumnDropLine(event: PointerEvent) {
   drag.line.style.left = `${side === 'start' ? rect.left : rect.right}px`;
   drag.line.style.top = `${wrapRect?.top ?? rect.top}px`;
   drag.line.style.height = `${wrapRect?.height ?? rect.height}px`;
-  /* 落到顶层：在目标列头顶部再画一条落点线，与并入分组区分 */
+  /* 顶层落点：目标列头顶部再加一条落点线，与并入分组区分 */
   const targetChain = (groupChainOf(targetKey) ?? []).join('\u0000');
-  const sourceChain = (groupChainOf(drag.key) ?? []).join('\u0000');
-  const toTopLevel = !targetChain && targetChain !== sourceChain;
+  const toTopLevel = !targetChain;
   if (toTopLevel) {
     if (!drag.cap) {
       drag.cap = document.createElement('div');
