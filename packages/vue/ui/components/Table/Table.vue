@@ -168,6 +168,7 @@
                 :style="[headerCellStyle(cell, rowIndex), cell.column.styles?.header]"
                 :aria-sort="cell.isGroup ? undefined : ariaSort(cell.leafKey)"
                 :data-column-key="cell.isGroup ? undefined : cell.leafKey"
+                :data-group-leaves="cell.isGroup ? leafKeysUnder(cell.column).join(' ') : undefined"
                 :title="columnDraggable && !cell.isGroup ? '拖动调整列顺序' : undefined"
                 @pointerdown="onHeaderPointerDown(cell, $event)"
                 @dblclick="onHeaderDblClick($event)"
@@ -393,6 +394,7 @@
                 :style="[overlayHeaderStyle(cell, rowIndex), cell.column.styles?.header]"
                 :aria-sort="cell.isGroup ? undefined : ariaSort(cell.leafKey)"
                 :data-column-key="cell.isGroup ? undefined : cell.leafKey"
+                :data-group-leaves="cell.isGroup ? leafKeysUnder(cell.column).join(' ') : undefined"
                 :title="columnDraggable && !cell.isGroup ? '拖动调整列顺序' : undefined"
                 @pointerdown="onHeaderPointerDown(cell, $event)"
               >
@@ -2781,6 +2783,7 @@ interface ColumnDragState {
   sourceEl: HTMLElement | null;
   ghost: HTMLElement | null;
   line: HTMLElement | null;
+  cap: HTMLElement | null;
   targetKey: string | null;
   targetSide: 'start' | 'end';
 }
@@ -2819,6 +2822,36 @@ function canDropColumn(sourceKey: string, targetKey: string) {
       groupChainOf(targetKey),
   );
 }
+const DROP_HIGHLIGHT = ['is-column-drop-group', 'is-column-drop-top'];
+function clearDropHighlight() {
+  const root = wrapEl.value?.closest<HTMLElement>('.k-table');
+  root
+    ?.querySelectorAll<HTMLElement>('.is-column-drop-group, .is-column-drop-top')
+    .forEach(el => el.classList.remove(...DROP_HIGHLIGHT));
+}
+/** 落点提示：并入分组时高亮目标分组表头，落到顶层时高亮目标列头 */
+function highlightDropTarget(sourceKey: string, targetKey: string) {
+  clearDropHighlight();
+  const root = wrapEl.value?.closest<HTMLElement>('.k-table');
+  if (!root) return;
+  const targetChain = (groupChainOf(targetKey) ?? []).join('\u0000');
+  const sourceChain = (groupChainOf(sourceKey) ?? []).join('\u0000');
+  if (targetChain === sourceChain) return;
+  if (targetChain) {
+    const groups = [...root.querySelectorAll<HTMLElement>('th[data-group-leaves]')]
+      .filter(th => (th.dataset.groupLeaves ?? '').split(' ').includes(targetKey))
+      /* 嵌套分组取最内层 */
+      .sort((a, b) => (a.dataset.groupLeaves?.length ?? 0) - (b.dataset.groupLeaves?.length ?? 0));
+    groups[0]?.classList.add('is-column-drop-group');
+    return;
+  }
+  const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(targetKey) : targetKey;
+  root
+    .querySelector<HTMLElement>(
+      `th[data-column-key="${escaped}"]:not(.is-overlay-placeholder)`,
+    )
+    ?.classList.add('is-column-drop-top');
+}
 function onHeaderPointerDown(cell: KTableHeaderCell<T>, event: PointerEvent) {
   if (!props.columnDraggable || cell.isGroup || !cell.leafKey) return;
   const target = event.target as HTMLElement;
@@ -2831,6 +2864,7 @@ function onHeaderPointerDown(cell: KTableHeaderCell<T>, event: PointerEvent) {
     sourceEl: (event.currentTarget as HTMLElement | null) ?? null,
     ghost: null,
     line: null,
+    cap: null,
     targetKey: null,
     targetSide: 'start',
   };
@@ -2846,8 +2880,12 @@ function updateColumnDropLine(event: PointerEvent) {
   if (!targetKey || !canDropColumn(drag.key, targetKey)) {
     drag.targetKey = null;
     if (drag.line) drag.line.style.display = 'none';
+    drag.cap?.remove();
+    drag.cap = null;
+    clearDropHighlight();
     return;
   }
+  highlightDropTarget(drag.key, targetKey);
   const rect = target!.getBoundingClientRect();
   const side = event.clientX < rect.left + rect.width / 2 ? 'start' : 'end';
   drag.targetKey = targetKey;
@@ -2862,6 +2900,24 @@ function updateColumnDropLine(event: PointerEvent) {
   drag.line.style.left = `${side === 'start' ? rect.left : rect.right}px`;
   drag.line.style.top = `${wrapRect?.top ?? rect.top}px`;
   drag.line.style.height = `${wrapRect?.height ?? rect.height}px`;
+  /* 落到顶层：在目标列头顶部再画一条落点线，与并入分组区分 */
+  const targetChain = (groupChainOf(targetKey) ?? []).join('\u0000');
+  const sourceChain = (groupChainOf(drag.key) ?? []).join('\u0000');
+  const toTopLevel = !targetChain && targetChain !== sourceChain;
+  if (toTopLevel) {
+    if (!drag.cap) {
+      drag.cap = document.createElement('div');
+      drag.cap.className = 'k-table__col-drop-cap';
+      document.body.appendChild(drag.cap);
+    }
+    drag.cap.style.display = 'block';
+    drag.cap.style.left = `${rect.left}px`;
+    drag.cap.style.top = `${rect.top}px`;
+    drag.cap.style.width = `${rect.width}px`;
+  } else if (drag.cap) {
+    drag.cap.remove();
+    drag.cap = null;
+  }
 }
 function onHeaderPointerMove(event: PointerEvent) {
   const drag = columnDrag;
@@ -2907,6 +2963,8 @@ function onHeaderPointerUp(event: PointerEvent) {
   drag.sourceEl?.classList.remove('is-column-dragging');
   drag.ghost?.remove();
   drag.line?.remove();
+  drag.cap?.remove();
+  clearDropHighlight();
   if (!drag.active) return;
   const targetKey = drag.targetKey;
   if (!targetKey || !canDropColumn(drag.key, targetKey)) return;
@@ -3883,6 +3941,14 @@ defineSlots<{
   text-align: start;
   white-space: nowrap;
 }
+/* 列拖拽落点：并入分组时目标分组表头加深，落到顶层时目标列头染色并在顶边加一条落点线 */
+.k-table .k-table__cell--head.is-column-drop-group {
+  background-color: color-mix(in oklab, var(--k-color-primary) 9%, var(--k-table-head-bg));
+  box-shadow: inset 0 0 0 var(--k-line-width) var(--k-color-primary);
+}
+.k-table .k-table__cell--head.is-column-drop-top {
+  background-color: color-mix(in oklab, var(--k-color-primary) 5%, var(--k-table-head-bg));
+}
 .k-table .k-table__cell--head.is-draggable {
   cursor: grab;
 }
@@ -3930,6 +3996,14 @@ defineSlots<{
   position: fixed;
   z-index: 2147483000;
   width: 2px;
+  border-radius: 1px;
+  background: var(--k-color-primary);
+  pointer-events: none;
+}
+.k-table__col-drop-cap {
+  position: fixed;
+  z-index: 2147483000;
+  height: 2px;
   border-radius: 1px;
   background: var(--k-color-primary);
   pointer-events: none;
