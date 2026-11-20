@@ -53,6 +53,8 @@ export interface KTableColumn<T = Record<string, unknown>> {
   render?: (ctx: KTableCellContext<T>) => VNodeChild;
   /** 单元格编辑：进入编辑态后默认渲染 KInput，可用 editRender 自定义 */
   editable?: boolean;
+  /** 自定义编辑控件的高度（px）：行高按它预留，避免进入编辑撑高行 */
+  editHeight?: number;
   editRender?: (ctx: KTableCellEditContext<T>) => VNodeChild;
   /** 操作列：直排按钮，超出 maxActions 收进「更多」 */
   actions?: KTableRowAction<T>[];
@@ -470,6 +472,30 @@ export function getCellValue(row: unknown, dataIndex?: string): unknown {
     if (value == null || typeof value !== 'object') return undefined;
     return (value as Record<string, unknown>)[key];
   }, row);
+}
+
+export interface KTableHighlightPart {
+  text: string;
+  match: boolean;
+}
+
+/** 按关键字切分文本片段，大小写不敏感，便于渲染高亮 */
+export function splitHighlightText(text: string, keyword: string): KTableHighlightPart[] {
+  const needle = keyword.trim();
+  if (!text || !needle) return [{ text, match: false }];
+  const lowerText = text.toLowerCase();
+  const lowerNeedle = needle.toLowerCase();
+  const parts: KTableHighlightPart[] = [];
+  let from = 0;
+  let at = lowerText.indexOf(lowerNeedle);
+  while (at !== -1) {
+    if (at > from) parts.push({ text: text.slice(from, at), match: false });
+    parts.push({ text: text.slice(at, at + needle.length), match: true });
+    from = at + needle.length;
+    at = lowerText.indexOf(lowerNeedle, from);
+  }
+  if (from < text.length) parts.push({ text: text.slice(from), match: false });
+  return parts;
 }
 
 export function getRowKey<T>(row: T, rowKey: keyof T | ((row: T, index: number) => KTableRowKey), index: number): KTableRowKey {

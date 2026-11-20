@@ -49,6 +49,49 @@
       </div>
       <div class="k-table__toolbar-end">
         <slot name="toolbar" :columns="leaves" />
+        <KPopover
+          v-if="cardFilterLeaves.length"
+          trigger="click"
+          placement="bottomRight"
+          :arrow="false"
+        >
+          <template #trigger>
+            <KButton
+              size="sm"
+              class="k-table__toolbar-filter"
+              :class="{ 'is-active': activeFilterCount > 0 }"
+            >
+              筛选<template v-if="activeFilterCount">（{{ activeFilterCount }}）</template>
+            </KButton>
+          </template>
+          <div
+            class="k-table__card-filter"
+            :class="classNames?.filterPanel"
+            :style="styles?.filterPanel"
+            @click.stop
+          >
+            <div
+              v-for="leaf in cardFilterLeaves"
+              :key="leaf.key"
+              class="k-table__card-filter-group"
+            >
+              <div class="k-table__card-filter-title">{{ leaf.column.title ?? leaf.key }}</div>
+              <div class="k-table__filter-options">
+                <KCheckbox
+                  v-for="option in leaf.column.filters"
+                  :key="String(option.value)"
+                  :model-value="filtersOf(leaf.column, leaf.key).includes(option.value)"
+                  @update:model-value="checked => toggleFilterValue(leaf.column, leaf.key, option.value, checked)"
+                >
+                  {{ option.label }}
+                </KCheckbox>
+              </div>
+            </div>
+            <div class="k-table__filter-actions">
+              <KButton size="xs" :disabled="!activeFilterCount" @click="resetAllFilters">重置</KButton>
+            </div>
+          </div>
+        </KPopover>
         <KPopover v-if="columnSetting" trigger="click" placement="bottomRight" :arrow="false">
           <template #trigger>
             <KButton size="sm">列设置</KButton>
@@ -135,8 +178,8 @@
                 v-if="selectionType === 'checkbox'"
                 :model-value="allChecked"
                 :indeterminate="partiallyChecked"
-                :disabled="!pageSelectableRows.length"
-                aria-label="全选当前页"
+                :disabled="!selectionScopeRows.length"
+                :aria-label="selectAllAllPages ? '全选全部页' : '全选当前页'"
                 @update:model-value="toggleAll"
               />
             </th>
@@ -344,7 +387,7 @@
         :ref="el => setFixedLayerEl(el, side)"
         class="k-table__fixed-layer"
         :class="[side === 'left' ? 'is-left' : 'is-right', classNames?.fixedLayer]"
-        :style="fixedLayerStyle(side)"
+        :style="[fixedLayerStyle(side), styles?.fixedLayer]"
       >
         <table class="k-table__fixed-table">
           <colgroup>
@@ -379,8 +422,8 @@
                     v-if="selectionType === 'checkbox'"
                     :model-value="allChecked"
                     :indeterminate="partiallyChecked"
-                    :disabled="!pageSelectableRows.length"
-                    aria-label="全选当前页"
+                    :disabled="!selectionScopeRows.length"
+                    :aria-label="selectAllAllPages ? '全选全部页' : '全选当前页'"
                     @update:model-value="toggleAll"
                   />
                 </th>
@@ -561,9 +604,15 @@
           </slot>
         </div>
         <template v-else>
-          <template v-for="item in cardItems" :key="item.key">
+          <template v-for="item in cardRenderItems" :key="item.key">
             <div
-              v-if="item.entry"
+              v-if="item.height != null"
+              class="k-table__cards-spacer"
+              :style="{ height: `${item.height}px` }"
+              aria-hidden="true"
+            ></div>
+            <div
+              v-else-if="item.entry"
               class="k-table__card"
               :class="{ 'is-selected': isSelected(item.entry.row) }"
               :style="cardIndentStyle(item.entry)"
@@ -814,6 +863,7 @@ import {
   sortRows,
   sortTreeNodes,
   spanCellKey,
+  splitHighlightText,
   splitStackColumns,
   widthStyle,
 } from '../../utils/table';
@@ -904,6 +954,8 @@ export interface KTableRowSelection<T> {
   selectedRowKeys?: KTableRowKey[];
   onChange?: (keys: KTableRowKey[], rows: T[]) => void;
   getCheckboxProps?: (row: T) => { disabled?: boolean };
+  /** 表头全选范围：page = 当前页（默认）；all = 当前筛选/排序结果的所有分页 */
+  selectAllScope?: 'page' | 'all';
 }
 
 type TablePart =
@@ -943,7 +995,7 @@ interface KTableProps<T> {
   paginationPosition?: KTablePaginationPosition;
   rowSelection?: KTableRowSelection<T>;
   scroll?: { x?: number | string; y?: number | string };
-  /** 大数据量虚拟滚动：支持变量行高、单元格合并与展开行 */
+  /** 大数据量虚拟滚动：支持变量行高、单元格合并与展开行；卡片模式按整卡高度虚拟化 */
   virtual?: boolean;
   /** 虚拟滚动启用阈值（行数），默认 40 */
   virtualThreshold?: number;
@@ -981,6 +1033,8 @@ interface KTableProps<T> {
   globalFilter?: string;
   /** 自定义全局搜索匹配；默认匹配可见叶子列的文本 */
   globalFilterMethod?: (row: T, keyword: string) => boolean;
+  /** 全局搜索命中时高亮默认文本单元格（自定义 render 不处理） */
+  globalFilterHighlight?: boolean;
   /** 行展开：配合 #expanded 插槽；false 可强制关闭 */
   expandable?: boolean;
   /** 默认展开全部可展开行 */
@@ -1043,6 +1097,7 @@ const props = withDefaults(defineProps<KTableProps<T>>(), {
   searchPlaceholder: '搜索',
   globalFilter: undefined,
   globalFilterMethod: undefined,
+  globalFilterHighlight: true,
   editTrigger: 'click',
   rowDraggable: false,
   columnDragMode: 'handle',
@@ -1174,7 +1229,6 @@ watch(
   () =>
     stackActive.value &&
     (Boolean(props.spanMethod) ||
-      props.virtual ||
       props.rowDraggable ||
       props.columnDraggable ||
       props.columnResizable),
@@ -1183,7 +1237,7 @@ watch(
     if (!(import.meta as { env?: { DEV?: boolean } }).env?.DEV) return;
     stackCompatWarned = true;
     console.warn(
-      '[KTable] 卡片模式不渲染表格：单元格合并、虚拟滚动、列/行拖拽与列宽调整在卡片下已忽略。',
+      '[KTable] 卡片模式不渲染表格：单元格合并、列/行拖拽与列宽调整在卡片下已忽略。',
     );
   },
   { immediate: true },
@@ -1238,8 +1292,26 @@ const visibleColumns = computed(() => leaves.value.map(leaf => leaf.column));
 const hasEditableColumns = computed(() =>
   leaves.value.some(leaf => leaf.column.editable),
 );
+/** 可编辑行预留高度：默认控件高度与列 editHeight 取最大，容纳自定义编辑控件 */
+const editableMinHeight = computed(() => {
+  let height = 0;
+  for (const leaf of leaves.value) {
+    if (!leaf.column.editable) continue;
+    const value = Number(leaf.column.editHeight);
+    if (Number.isFinite(value) && value > height) height = value;
+  }
+  return height;
+});
+/** 卡片模式没有表头：工具条汇总所有列筛选，入口按可见过滤列出现 */
+const cardFilterLeaves = computed(() =>
+  stackActive.value ? leaves.value.filter(leaf => leaf.column.filters?.length) : [],
+);
 const toolbarVisible = computed(
-  () => props.columnSetting || props.searchable || Boolean(slots.filter || slots.toolbar),
+  () =>
+    props.columnSetting ||
+    props.searchable ||
+    Boolean(slots.filter || slots.toolbar) ||
+    cardFilterLeaves.value.length > 0,
 );
 
 const internalSort = ref<KTableSortState | null>(null);
@@ -1370,14 +1442,18 @@ function isTreeExpanded(row: T) {
   return expandedSet.value.has(key) || Boolean(treeFiltered.value?.forcedExpanded.has(key));
 }
 
-const processedRows = computed(() => {
+/** 筛选/排序与关键字分开：只改搜索词时复用已算好的排序结果 */
+const filteredSortedRows = computed(() => {
   if (treeFlat.value) return treeFlat.value.map(item => item.row);
   return sortRows(
-    filterRows(props.dataSource, dataColumns.value, activeFilters.value).filter(rowMatchesKeyword),
+    filterRows(props.dataSource, dataColumns.value, activeFilters.value),
     dataColumns.value,
     sort.value,
   );
 });
+const processedRows = computed(() =>
+  treeFlat.value ? filteredSortedRows.value : filteredSortedRows.value.filter(rowMatchesKeyword),
+);
 /** 固定行不受筛选/排序/分页影响，始终按 dataSource 顺序显示 */
 watch(keyword, () => {
   if (paginationEnabled.value) current.value = 1;
@@ -1535,7 +1611,7 @@ const bodyRows = computed<KTableBodyRow<T>[]>(() => [
   })),
 ]);
 
-/* ---------- 卡片列表：展开详情渲染在卡片内部，不走虚拟窗口 ---------- */
+/* ---------- 卡片列表：展开详情渲染在卡片内部，整卡高度计入虚拟窗口 ---------- */
 interface KTableCardItem<T> {
   key: string;
   entry: KTableBodyRow<T>;
@@ -1562,7 +1638,10 @@ const virtualStart = ref(0);
 const virtualEnd = ref(0);
 const virtualActive = computed(() => props.virtual);
 const virtualEnabled = computed(
-  () => virtualActive.value && pageRows.value.length > Math.max(1, props.virtualThreshold),
+  () =>
+    !stackActive.value &&
+    virtualActive.value &&
+    pageRows.value.length > Math.max(1, props.virtualThreshold),
 );
 const pinnedTopHeight = ref(0);
 const pinnedBottomHeight = ref(0);
@@ -1580,6 +1659,176 @@ const pageKeySignature = computed(() => pageRows.value.map(rowCacheKey).join('\u
 const virtualSignature = computed(
   () => `${pageKeySignature.value}|${expandedRowKeys.value.join('\u0001')}`,
 );
+
+/* ---------- 卡片虚拟滚动：卡片高度差异大，单独测量缓存与前缀和 ---------- */
+interface KTableCardRenderItem<T> {
+  key: string;
+  entry?: KTableBodyRow<T>;
+  height?: number;
+}
+const CARD_HEIGHT_ESTIMATE = 132;
+const cardHeightCache = new Map<string, number>();
+const cardRowHeight = ref(CARD_HEIGHT_ESTIMATE);
+const cardGap = ref(12);
+const cardVirtualStart = ref(0);
+const cardVirtualEnd = ref(0);
+const cardOffsets = ref<number[]>([]);
+let cardOffsetSignature = '';
+const cardSignature = computed(
+  () =>
+    `${cardItems.value.map(item => rowCacheKey(item.entry.row)).join('\u0001')}|${expandedRowKeys.value.join('\u0001')}`,
+);
+const cardVirtualEnabled = computed(
+  () =>
+    stackActive.value &&
+    virtualActive.value &&
+    cardItems.value.length > Math.max(1, props.virtualThreshold),
+);
+function rebuildCardOffsets() {
+  /* 卡片间距走 flex gap，前缀和里按「高 + 间距」累加；虚拟窗口用零高尾占位吸收最后一处 gap */
+  const heights = cardItems.value.map(
+    item => (cardHeightCache.get(rowCacheKey(item.entry.row)) ?? cardRowHeight.value) + cardGap.value,
+  );
+  cardOffsets.value = buildVirtualOffsets(
+    heights,
+    cardItems.value.length,
+    cardRowHeight.value + cardGap.value,
+  ).offsets;
+}
+function ensureCardOffsets() {
+  if (cardSignature.value !== cardOffsetSignature) {
+    cardOffsetSignature = cardSignature.value;
+    rebuildCardOffsets();
+  }
+  return cardOffsets.value;
+}
+function updateCardVirtualWindow() {
+  const count = cardItems.value.length;
+  if (!cardVirtualEnabled.value) {
+    if (cardVirtualStart.value !== 0) cardVirtualStart.value = 0;
+    if (cardVirtualEnd.value !== count) cardVirtualEnd.value = count;
+    return;
+  }
+  const wrap = wrapEl.value;
+  if (!wrap) return;
+  const offsets = ensureCardOffsets();
+  const range = getVariableVirtualRange(
+    wrap.scrollTop,
+    wrap.clientHeight,
+    offsets,
+    Math.max(0, props.virtualOverscan),
+  );
+  const buffer = Math.max(0, props.virtualBuffer) * (cardRowHeight.value + cardGap.value);
+  const insideWindow =
+    cardVirtualStart.value > 0 &&
+    cardVirtualEnd.value < count &&
+    wrap.scrollTop > (offsets[cardVirtualStart.value + 1] ?? 0) + buffer &&
+    wrap.scrollTop + wrap.clientHeight < (offsets[cardVirtualEnd.value] ?? 0) - buffer;
+  if (insideWindow) return;
+  if (range.start !== cardVirtualStart.value) cardVirtualStart.value = range.start;
+  if (range.end !== cardVirtualEnd.value) cardVirtualEnd.value = range.end;
+}
+const cardRenderItems = computed<KTableCardRenderItem<T>[]>(() => {
+  if (!stackActive.value) return [];
+  const items = cardItems.value;
+  if (!cardVirtualEnabled.value) return items.map(item => ({ key: item.key, entry: item.entry }));
+  const count = items.length;
+  const offsets = cardOffsets.value;
+  const start = Math.min(cardVirtualStart.value, count);
+  const end = Math.min(Math.max(cardVirtualEnd.value, start), count);
+  const result: KTableCardRenderItem<T>[] = [];
+  const top = offsets[start] ?? 0;
+  if (start > 0) {
+    /* 占位与下一张卡片之间还有一处 gap，这里扣掉避免双倍间距 */
+    result.push({ key: 'card-top-spacer', height: Math.max(0, top - cardGap.value) });
+  }
+  for (let index = start; index < end; index++) {
+    const item = items[index];
+    if (item) result.push({ key: item.key, entry: item.entry });
+  }
+  const total = offsets[count] ?? count * (cardRowHeight.value + cardGap.value);
+  const bottom = total - (offsets[end] ?? total);
+  /* 永远保留尾占位：零高时也靠它与最后一张卡之间的 gap 补齐总高 */
+  result.push({ key: 'card-bottom-spacer', height: Math.max(0, bottom) });
+  return result;
+});
+/** 测量窗口内卡片高度；高度变化时锚定滚动位置，避免滚动条总高变化导致跳动 */
+function measureCardHeights() {
+  if (!cardVirtualEnabled.value) return;
+  const wrap = wrapEl.value;
+  if (!wrap) return;
+  let changed = false;
+  const cards = Array.from(
+    wrap.querySelectorAll<HTMLElement>('.k-table__cards > .k-table__card[data-row-key]'),
+  );
+  cards.forEach(card => {
+    const key = card.dataset.rowKey;
+    if (key == null) return;
+    const height = card.getBoundingClientRect().height;
+    if (!(height > 0)) return;
+    const cached = cardHeightCache.get(key);
+    if (cached == null || Math.abs(cached - height) > 0.5) {
+      cardHeightCache.set(key, height);
+      changed = true;
+    }
+  });
+  if (cards.length >= 2) {
+    const gap = cards[1].getBoundingClientRect().top - cards[0].getBoundingClientRect().bottom;
+    if (gap >= 0 && Math.abs(gap - cardGap.value) > 0.5) {
+      cardGap.value = gap;
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  if (cardHeightCache.size >= 8) {
+    let sum = 0;
+    cardHeightCache.forEach(height => (sum += height));
+    const average = Math.round(sum / cardHeightCache.size);
+    if (Math.abs(average - cardRowHeight.value) > 2) cardRowHeight.value = average;
+  }
+  const offsets = cardOffsets.value;
+  const hasAnchor = offsets.length === cardItems.value.length + 1;
+  const anchorIndex = hasAnchor ? findRowAtOffset(offsets, wrap.scrollTop) : 0;
+  const anchorDelta = hasAnchor ? wrap.scrollTop - offsets[anchorIndex] : 0;
+  rebuildCardOffsets();
+  cardOffsetSignature = cardSignature.value;
+  const anchorTop = cardOffsets.value[anchorIndex];
+  if (hasAnchor && anchorTop != null) {
+    const target = anchorTop + anchorDelta;
+    nextTick(() => {
+      if (!cardVirtualEnabled.value) return;
+      if (Math.abs(wrap.scrollTop - target) > 0.5) wrap.scrollTop = target;
+    });
+  }
+  updateCardVirtualWindow();
+}
+watch(
+  [cardVirtualStart, cardVirtualEnd],
+  () => {
+    if (!cardVirtualEnabled.value) return;
+    measureCardHeights();
+  },
+  { flush: 'post' },
+);
+watch(cardVirtualEnabled, enabled => {
+  if (!enabled) {
+    cardVirtualStart.value = 0;
+    cardVirtualEnd.value = cardItems.value.length;
+    return;
+  }
+  nextTick(() => {
+    updateCardVirtualWindow();
+    measureCardHeights();
+  });
+});
+/* 换页、筛选、展开/收起会换一批卡片：签名变化后重建偏移并按当前位置重排窗口 */
+watch(cardSignature, () => {
+  if (!cardVirtualEnabled.value) return;
+  nextTick(() => {
+    updateCardVirtualWindow();
+    measureCardHeights();
+  });
+});
 /** 展开行的估算高度：优先用已测平均值，避免滚动条总高大幅漂移 */
 function expandedHeightEstimate() {
   if (!expandedHeightCache.size) return virtualRowHeight.value;
@@ -1876,6 +2125,8 @@ const frozenWidths = ref<Record<string, number> | null>(null);
 const frozenTableWidth = ref<number | null>(null);
 let baseWidths: Record<string, number> | null = null;
 let baseSignature = '';
+/** 表宽/列宽未变时跳过表头宽度读取，虚拟滚动换窗不再触发整表强制排版 */
+let columnMeasureSignature = '';
 function fixedOffsets(side: 'left' | 'right') {
   const result: Record<string, number> = {};
   const ordered = side === 'left' ? leaves.value : [...leaves.value].reverse();
@@ -2116,6 +2367,9 @@ const rootStyle = computed<CSSProperties>(() => {
   const style: Record<string, string> = {
     '--k-table-head-height': `${headerHeight.value}px`,
   };
+  if (hasEditableColumns.value && editableMinHeight.value > 0) {
+    style['--k-table-edit-height'] = `${editableMinHeight.value}px`;
+  }
   if (pageStickyActive.value) {
     const offset = props.pageStickyOffset;
     style[headerAtBottom.value ? '--k-table-page-sticky-bottom' : '--k-table-page-sticky-top'] =
@@ -2211,6 +2465,17 @@ function measurePinnedRows() {
 function measureColumnWidths() {
   const table = tableEl.value;
   if (!table) return;
+  const tableWidth = table.getBoundingClientRect().width;
+  const signature = [
+    Math.round(tableWidth * 100),
+    leadingWidth.value,
+    props.size,
+    document.fonts?.status ?? '',
+    leaves.value
+      .map(leaf => `${leaf.key}:${leaf.column.width ?? ''}:${widthOverrides.value[leaf.key] ?? ''}`)
+      .join('|'),
+  ].join('#');
+  if (signature === columnMeasureSignature) return;
   const next: Record<string, number> = {};
   table.querySelectorAll<HTMLElement>('thead th[data-column-key]').forEach(th => {
     const key = th.dataset.columnKey;
@@ -2218,6 +2483,7 @@ function measureColumnWidths() {
   });
   const keys = Object.keys(next);
   if (!keys.length) return;
+  columnMeasureSignature = signature;
   const unchanged =
     keys.length === Object.keys(measuredWidths.value).length &&
     keys.every(key => Math.abs(next[key] - (measuredWidths.value[key] ?? -1)) < 0.01);
@@ -2296,6 +2562,8 @@ function measureLayout() {
     syncFixedLayers();
     updateVirtualWindow();
     measureVirtualHeights();
+    updateCardVirtualWindow();
+    measureCardHeights();
     tableHeight.value = tableEl.value?.getBoundingClientRect().height ?? 0;
     const wrap = wrapEl.value;
     if (wrap) {
@@ -2305,6 +2573,7 @@ function measureLayout() {
     scrollRange.value = maxScrollLeft;
     measureBottomBar();
     updateVirtualWindow();
+    updateCardVirtualWindow();
     correctBottomStickyHeader();
     syncScrollState();
   } finally {
@@ -2361,6 +2630,7 @@ function onWrapScroll() {
     syncScrollRaf = 0;
     syncScrollState();
     updateVirtualWindow();
+    updateCardVirtualWindow();
     checkReachEnd();
   });
 }
@@ -2387,6 +2657,11 @@ onMounted(async () => {
       if (el) layoutResizeObserver.observe(el);
     }
   }
+  /* 字体就绪后字形宽度会变，清掉列宽测量缓存再量一次 */
+  document.fonts?.ready.then(() => {
+    columnMeasureSignature = '';
+    scheduleMeasureLayout();
+  });
 });
 onScopeDispose(() => {
   layoutResizeObserver?.disconnect();
@@ -2727,6 +3002,13 @@ function clearFilter(column: KTableColumn<T>, key: string) {
   emit('filterChange', next);
   if (paginationEnabled.value) current.value = 1;
 }
+/** 卡片模式没有表头：工具条汇总所有列筛选，入口按可见过滤列出现 */
+const activeFilterCount = computed(() => Object.keys(activeFilters.value).length);
+function resetAllFilters() {
+  if (props.filters === undefined) internalFilters.value = {};
+  emit('filterChange', {});
+  if (paginationEnabled.value) current.value = 1;
+}
 
 function toggleColumnVisible(key: string, visible: boolean) {
   if (!visible && visibleColumnCount.value <= 1) return;
@@ -2768,20 +3050,26 @@ function selectSingleRow(row: T) {
 const pageSelectableRows = computed(() =>
   pageRows.value.filter(row => !checkboxDisabled(row)),
 );
+/** 表头全选作用范围：all 时覆盖当前筛选/排序结果的其余分页；固定行不参与 */
+const selectAllAllPages = computed(() => props.rowSelection?.selectAllScope === 'all');
+const selectionScopeRows = computed(() =>
+  selectAllAllPages.value
+    ? unpinnedRows.value.filter(row => !checkboxDisabled(row))
+    : pageSelectableRows.value,
+);
 const allChecked = computed(
   () =>
-    pageSelectableRows.value.length > 0 &&
-    pageSelectableRows.value.every(row => selectedSet.value.has(rowKeyOf(row))),
+    selectionScopeRows.value.length > 0 &&
+    selectionScopeRows.value.every(row => selectedSet.value.has(rowKeyOf(row))),
 );
 const partiallyChecked = computed(
   () =>
     !allChecked.value &&
-    pageSelectableRows.value.some(row => selectedSet.value.has(rowKeyOf(row))),
+    selectionScopeRows.value.some(row => selectedSet.value.has(rowKeyOf(row))),
 );
 function toggleAll(checked: boolean) {
   const next = new Set(selectedKeys.value);
-  for (const row of pageRows.value) {
-    if (checkboxDisabled(row)) continue;
+  for (const row of selectionScopeRows.value) {
     const key = rowKeyOf(row);
     if (checked) next.add(key);
     else next.delete(key);
@@ -3291,7 +3579,16 @@ const KCellContent = defineComponent({
       if (column.render) {
         return column.render({ row: cellProps.row, value, index: cellProps.index, column });
       }
-      return h('span', value == null ? '' : String(value));
+      const text = value == null ? '' : String(value);
+      if (!props.globalFilterHighlight || !globalActive.value) {
+        return h('span', text);
+      }
+      return h(
+        'span',
+        splitHighlightText(text, keyword.value).map(part =>
+          part.match ? h('mark', { class: 'k-table__mark' }, part.text) : part.text,
+        ),
+      );
     };
   },
 });
@@ -3935,11 +4232,19 @@ defineSlots<{
   /* 无空格长串（邮箱/URL）在单元格内换行，避免压到相邻列；break-word 不影响自动布局列的最小宽度 */
   overflow-wrap: break-word;
 }
-/* 可编辑表：行高统一按默认编辑控件（KInput sm）预留，进入编辑不再撑高行。
-   自定义 editRender 高于默认控件时仍会撑高当前行。 */
+/* 搜索命中片段只改底色，不加 padding：避免撑高兴亮部分与省略号抖动 */
+.k-table .k-table__mark {
+  padding: 0;
+  border-radius: 2px;
+  background-color: color-mix(in oklab, var(--k-color-warning) 32%, transparent);
+  color: inherit;
+}
+/* 可编辑表：行高统一按默认编辑控件（KInput sm）预留，进入编辑不再撑高行；
+   列配 editHeight 时按较高者预留，容纳自定义 editRender。 */
 .k-table.has-editable {
   --k-table-row-min-height: calc(
-    var(--k-control-height-sm) + var(--k-table-cell-padding-y) * 2
+    max(var(--k-control-height-sm), var(--k-table-edit-height, 0px)) +
+    var(--k-table-cell-padding-y) * 2
   );
 }
 .k-table.has-editable .k-table__body .k-table__row > .k-table__cell {
@@ -4246,6 +4551,31 @@ defineSlots<{
   gap: var(--k-size-xs);
   padding-top: var(--k-size-xs);
   border-top: var(--k-line-width) solid var(--k-color-border);
+}
+/* 卡片模式工具条筛选：无表头时汇总展示各列选项 */
+.k-table__toolbar-filter.is-active {
+  color: var(--k-color-primary);
+  border-color: var(--k-color-primary);
+}
+.k-table__card-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-size-xs);
+  min-width: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.k-table__card-filter-group + .k-table__card-filter-group {
+  padding-top: var(--k-size-xs);
+  border-top: var(--k-line-width) solid var(--k-color-border);
+}
+.k-table__card-filter-title {
+  margin-bottom: 6px;
+  color: var(--k-color-text-secondary);
+  font-size: 12px;
+}
+.k-table__cards-spacer {
+  flex: none;
 }
 .k-table .k-table__row,
 .k-table .k-table__empty-row {

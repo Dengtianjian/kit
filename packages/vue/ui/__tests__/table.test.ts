@@ -21,6 +21,7 @@ import {
   sortRows,
   sortTreeNodes,
   spanCellKey,
+  splitHighlightText,
   splitStackColumns,
 } from '../utils/table.ts';
 import type { KTableColumn } from '../utils/table.ts';
@@ -579,4 +580,23 @@ test('stack columns honor explicit titles and skip all-subtitle tables', () => {
   );
   assert.deepEqual(onlySubtitle.title, []);
   assert.deepEqual(onlySubtitle.fields, []);
+});
+
+test('split highlight text is case-insensitive and keeps every match', () => {
+  assert.deepEqual(splitHighlightText('Aaa@Example.com', 'aa'), [
+    { text: 'Aa', match: true },
+    { text: 'a@Example.com', match: false },
+  ]);
+  assert.deepEqual(splitHighlightText('Example.com', 'EXAMPLE'), [
+    { text: 'Example', match: true },
+    { text: '.com', match: false },
+  ]);
+  assert.deepEqual(splitHighlightText('abc', '  B '), [
+    { text: 'a', match: false },
+    { text: 'b', match: true },
+    { text: 'c', match: false },
+  ]);
+  assert.deepEqual(splitHighlightText('abc', ''), [{ text: 'abc', match: false }]);
+  assert.deepEqual(splitHighlightText('abc', 'z'), [{ text: 'abc', match: false }]);
+  assert.deepEqual(splitHighlightText('', 'a'), [{ text: '', match: false }]);
 });
