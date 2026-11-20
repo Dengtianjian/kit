@@ -30,6 +30,7 @@
         :description="it.config.description"
         :actions="it.config.actions ?? it.config.btn"
         :type="it.config.type"
+        :size="it.config.size"
         :icon="it.config.icon"
         :closable="it.closable"
         :close-icon="it.closeIcon"

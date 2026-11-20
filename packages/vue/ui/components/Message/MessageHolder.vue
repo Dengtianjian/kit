@@ -11,7 +11,7 @@
         v-for="it in svc.items.value"
         :key="it.id"
         class="k-message"
-        :class="[`k-message--${it.type}`, it.classNames?.root]"
+        :class="[`k-message--${it.type}`, `k-message--${it.size}`, it.classNames?.root]"
         :style="it.styles?.root"
         data-part="item"
         :role="it.type === 'error' ? 'alert' : 'status'"
@@ -73,6 +73,7 @@ const MessageCustom = defineComponent({
         content: p.item.content,
         type: p.item.type,
         icon: p.item.icon,
+        size: p.item.size,
         close: p.close,
       });
   },
@@ -132,25 +133,39 @@ onBeforeUnmount(() => {
   --k-message-bg: var(--k-color-bg-elevated);
   --k-message-radius: var(--k-border-radius-lg);
   --k-message-pad: var(--k-size-sm) var(--k-size);
+  --k-message-font-size: var(--k-font-size);
+  --k-message-icon-size: var(--k-font-size);
+  --k-message-gap: var(--k-size-xs);
 
   display: inline-flex;
   align-items: center;
-  gap: var(--k-size-xs);
+  gap: var(--k-message-gap);
   max-width: calc(100vw - var(--k-size) * 4);
   padding: var(--k-message-pad);
   border-radius: var(--k-message-radius);
   background-color: var(--k-message-bg);
   box-shadow: var(--k-box-shadow-secondary);
   color: var(--k-color-text);
-  font-size: var(--k-font-size);
+  font-size: var(--k-message-font-size);
   line-height: var(--k-line-height);
   pointer-events: auto;
   animation: k-message-in var(--k-motion-duration-mid) var(--k-motion-ease-out-cubic);
 }
+.k-message--sm {
+  --k-message-pad: var(--k-size-xs) var(--k-size-sm);
+  --k-message-font-size: var(--k-font-size-sm);
+  --k-message-icon-size: var(--k-font-size-sm);
+}
+.k-message--lg {
+  --k-message-pad: var(--k-size) var(--k-size-md);
+  --k-message-font-size: var(--k-font-size-lg);
+  --k-message-icon-size: var(--k-font-size-lg);
+  --k-message-gap: var(--k-size-sm);
+}
 .k-message__icon {
   flex: none;
   display: inline-flex;
-  font-size: var(--k-font-size);
+  font-size: var(--k-message-icon-size);
 }
 .k-message--success .k-message__icon {
   color: var(--k-color-success);

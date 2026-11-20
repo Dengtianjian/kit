@@ -57,7 +57,7 @@ export interface KButtonRenderScope {
   href: string | undefined;
   target: string | undefined;
   icon: Component | null;
-  iconPlacement: 'start' | 'end';
+  iconPlacement: 'start' | 'end' | 'top' | 'bottom';
   nativeType: 'button' | 'submit' | 'reset';
   /** 派生标签：有 href = a，否则 button */
   tag: 'a' | 'button';
@@ -87,8 +87,8 @@ interface KButtonProps {
   target?: string;
   /** 也可 #icon 插槽；两者都无 = 纯文字按钮 */
   icon?: Component | null;
-  /** 图标位置：start = 文字前（缺省），end = 文字后 */
-  iconPlacement?: 'start' | 'end';
+  /** 图标位置：start = 文字前（缺省），end = 文字后，top / bottom = 文字上 / 下（按钮转纵向） */
+  iconPlacement?: 'start' | 'end' | 'top' | 'bottom';
   /** 点击波纹开关：prop > Provider defaults.KButton.wave > Provider wave.disabled 取反 > 开 */
   wave?: boolean;
   nativeType?: 'button' | 'submit' | 'reset';
@@ -123,6 +123,7 @@ const mergedSize = computed<ButtonSize>(() => resolvedSize.value ?? groupSize?.v
 /* 波纹开关解析（antd 同款双通道：Provider 全局 wave.disabled + 实例级 prop） */
 const config = useKConfig();
 const waveOn = computed(() => {
+  if (props.variant === 'text' || props.type === 'link') return false;
   if (props.wave !== undefined) return props.wave;
   const d = config?.defaults.value?.KButton?.wave;
   if (d !== undefined) return Boolean(d);
@@ -160,6 +161,8 @@ const classes = computed(() => [
     'is-disabled': isDisabled.value || props.loading,
     'k-button--block': props.block,
     'k-button--icon-end': props.iconPlacement === 'end',
+    'k-button--icon-top': props.iconPlacement === 'top',
+    'k-button--icon-bottom': props.iconPlacement === 'bottom',
   },
 ]);
 
@@ -600,6 +603,15 @@ if (import.meta.env.DEV) {
 /* ---------- 部件 ---------- */
 /* 图标位置：DOM 顺序不动，order 后移（antd/naive 同款逻辑命名，RTL 安全）；loading 占图标位 */
 .k-button--icon-end :is(.k-button__icon, .k-button__spinner) { order: 1; }
+.k-button--icon-top,
+.k-button--icon-bottom {
+  flex-direction: column;
+  height: auto;
+  min-height: var(--k-button-height);
+  padding-block: var(--k-size-xxs);
+  gap: var(--k-size-xxs);
+}
+.k-button--icon-bottom :is(.k-button__icon, .k-button__spinner) { order: 1; }
 
 .k-button__icon svg {
   width: 1em;

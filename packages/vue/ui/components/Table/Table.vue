@@ -15,10 +15,16 @@
         'has-scroll-right': scrollState.right,
         'has-scroll-top': scrollState.top,
         'has-scroll-bottom': scrollState.bottom,
+        'is-stacked': stackActive,
+        'has-editable': hasEditableColumns,
+        'has-bottom-scrollbar': bottomBar.visible,
+        'is-header-bottom': headerAtBottom,
+        'is-page-sticky': pageStickyActive && !headerAtBottom,
+        'is-page-sticky-bottom': pageStickyActive && headerAtBottom,
       },
       classNames?.root,
     ]"
-    :style="styles?.root"
+    :style="[rootStyle, styles?.root]"
   >
     <div
       v-if="toolbarVisible"
@@ -78,8 +84,9 @@
         @change="onPageChange"
       />
     </div>
+    <div class="k-table__scroll">
     <div ref="wrapEl" class="k-table__wrap" :class="classNames?.wrap" :style="[wrapStyle, styles?.wrap]" @scroll.passive="onWrapScroll">
-      <div class="k-table__canvas" :style="canvasStyle">
+      <div v-if="!stackActive" class="k-table__canvas" :style="canvasStyle">
       <table ref="tableEl" class="k-table__table" :style="tableStyle" :aria-busy="loading || undefined">
         <colgroup>
           <col v-if="expandableEnabled" style="width: 44px" />
@@ -162,7 +169,11 @@
                 @pointerdown="onHeaderPointerDown(cell, $event)"
                 @dblclick="onHeaderDblClick($event)"
               >
-                <KHeadCell :cell="cell" :show-grip="columnDraggable && !cell.isGroup" />
+                <KHeadCell
+                  :cell="cell"
+                  :show-grip="columnDraggable && !cell.isGroup"
+                  :filter-placement="headerAtBottom ? 'topLeft' : 'bottomLeft'"
+                />
                 <span
                   v-if="columnResizable && !cell.isGroup"
                   class="k-table__resize"
@@ -375,11 +386,15 @@
                   cell.column.classNames?.header,
                   side === 'left' ? 'is-fixed-left' : 'is-fixed-right',
                 ]"
-                :style="[overlayHeaderStyle(rowIndex), cell.column.styles?.header]"
+                :style="[overlayHeaderStyle(cell, rowIndex), cell.column.styles?.header]"
                 :aria-sort="cell.isGroup ? undefined : ariaSort(cell.leafKey)"
                 :data-column-key="cell.isGroup ? undefined : cell.leafKey"
               >
-                <KHeadCell :cell="cell" :show-grip="columnDraggable && !cell.isGroup" />
+                <KHeadCell
+                  :cell="cell"
+                  :show-grip="columnDraggable && !cell.isGroup"
+                  :filter-placement="headerAtBottom ? 'topLeft' : 'bottomLeft'"
+                />
               </th>
               <th
                 v-if="!overlayHeaderCells(headerRow, side).length && !(side === 'left' && leadingInOverlay && rowIndex === 0)"
@@ -509,8 +524,183 @@
       </div>
       </template>
       </div>
+      <div
+        v-if="stackActive"
+        class="k-table__cards"
+        :class="classNames?.stack"
+        :style="styles?.stack"
+        role="list"
+      >
+        <div v-if="!cardItems.length" class="k-table__cards-empty">
+          <slot name="empty" :columns="visibleColumns">
+            <KEmpty :description="emptyText" :size="size === 'sm' ? 'sm' : 'md'" />
+          </slot>
+        </div>
+        <template v-else>
+          <template v-for="item in cardItems" :key="item.key">
+            <div
+              v-if="item.entry"
+              class="k-table__card"
+              :class="{ 'is-selected': isSelected(item.entry.row) }"
+              :style="cardIndentStyle(item.entry)"
+              :data-row-key="rowKeyOf(item.entry.row)"
+              role="listitem"
+              @click="onRowClick(item.entry.row, item.entry.index, $event)"
+              @mouseenter="scheduleHover(rowKeyOf(item.entry.row))"
+              @mouseleave="scheduleHover(null)"
+            >
+              <div v-if="cardHasControls(item.entry) || !$slots.card" class="k-table__card-head">
+                <span v-if="selectionEnabled" class="k-table__card-select" @click.stop>
+                  <KCheckbox
+                    v-if="selectionType === 'checkbox'"
+                    :model-value="isSelected(item.entry.row)"
+                    :disabled="checkboxDisabled(item.entry.row)"
+                    :aria-label="`选择第 ${item.entry.index + 1} 行`"
+                    @update:model-value="checked => toggleRow(item.entry.row, checked)"
+                  />
+                  <KRadio
+                    v-else
+                    :name="selectionName"
+                    :value="rowKeyOf(item.entry.row)"
+                    :model-value="selectedKeys[0]"
+                    :disabled="checkboxDisabled(item.entry.row)"
+                    :aria-label="`选择第 ${item.entry.index + 1} 行`"
+                    @update:model-value="selectSingleRow(item.entry.row)"
+                  />
+                </span>
+                <button
+                  v-if="expandableEnabled && !item.entry.pinned && canExpand(item.entry.row)"
+                  type="button"
+                  class="k-table__expand"
+                  :class="{ 'is-expanded': isExpanded(item.entry.row) }"
+                  :aria-expanded="isExpanded(item.entry.row)"
+                  :aria-label="isExpanded(item.entry.row) ? '收起' : '展开'"
+                  @click.stop="toggleExpand(item.entry.row)"
+                >
+                  <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M6 3.5 10.5 8 6 12.5" />
+                  </svg>
+                </button>
+                <button
+                  v-if="$slots.card && treeEnabled && (item.entry.hasChildren || (detailEnabled && canExpand(item.entry.row)))"
+                  type="button"
+                  class="k-table__tree-caret"
+                  :class="{ 'is-expanded': isTreeExpanded(item.entry.row) }"
+                  :aria-expanded="isTreeExpanded(item.entry.row)"
+                  aria-label="展开子行"
+                  @click.stop="toggleExpand(item.entry.row)"
+                >
+                  <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M6 3.5 10.5 8 6 12.5" />
+                  </svg>
+                </button>
+                <div v-if="!$slots.card" class="k-table__card-heading">
+                  <div class="k-table__card-title">
+                    <span
+                      v-for="leaf in cardTitleLeaves"
+                      :key="leaf.key"
+                      class="k-table__card-title-cell"
+                      :class="leaf.column.classNames?.cell"
+                    >
+                      <KBodyCellInner
+                        :column="leaf.column"
+                        :row="item.entry.row"
+                        :index="item.entry.index"
+                        v-bind="cardTreeCellProps(item.entry, leaf)"
+                      />
+                    </span>
+                  </div>
+                  <div v-if="cardSubtitleLeaves.length" class="k-table__card-subtitle">
+                    <span
+                      v-for="leaf in cardSubtitleLeaves"
+                      :key="leaf.key"
+                      :class="leaf.column.classNames?.cell"
+                    >
+                      <KBodyCellInner :column="leaf.column" :row="item.entry.row" :index="item.entry.index" />
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <template v-if="$slots.card">
+                <slot
+                  name="card"
+                  :row="item.entry.row"
+                  :index="item.entry.index"
+                  :entry="item.entry"
+                  :columns="visibleColumns"
+                />
+                <div v-if="cardExpanded(item.entry)" class="k-table__card-expanded">
+                  <KExpandedContent :content="expandedContent(item.entry.row, item.entry.index)" />
+                </div>
+              </template>
+              <template v-else>
+                <div v-if="cardFieldLeaves.length" class="k-table__card-body">
+                  <div
+                    v-for="leaf in cardFieldLeaves"
+                    :key="leaf.key"
+                    class="k-table__card-field"
+                    @click="maybeBeginCellEdit(item.entry, leaf, $event)"
+                    @dblclick="maybeBeginCellEditDouble(item.entry, leaf, $event)"
+                  >
+                    <span class="k-table__card-label">{{ cardLabelOf(leaf) }}</span>
+                    <span class="k-table__card-value" :class="leaf.column.classNames?.cell">
+                      <KBodyCellInner
+                        :column="leaf.column"
+                        :row="item.entry.row"
+                        :index="item.entry.index"
+                        :editing="isCellEditing(item.entry.row, leaf.key)"
+                        :on-commit="value => commitCellEdit(item.entry.row, leaf.column, item.entry.index, value)"
+                        :on-cancel="cancelCellEdit"
+                      />
+                    </span>
+                  </div>
+                </div>
+                <div v-if="cardExpanded(item.entry)" class="k-table__card-expanded">
+                  <KExpandedContent :content="expandedContent(item.entry.row, item.entry.index)" />
+                </div>
+                <div v-if="cardActionLeaves.length" class="k-table__card-actions" @click.stop>
+                  <KBodyCellInner
+                    v-for="leaf in cardActionLeaves"
+                    :key="leaf.key"
+                    :column="leaf.column"
+                    :row="item.entry.row"
+                    :index="item.entry.index"
+                  />
+                </div>
+              </template>
+            </div>
+          </template>
+        </template>
+      </div>
       <div v-if="loading" class="k-table__loading" :class="classNames?.loading" :style="styles?.loading" role="status" aria-label="加载中">
         <KSpin />
+      </div>
+    </div>
+    <div
+      v-if="loadingMore"
+      class="k-table__load-more"
+      :class="classNames?.loadMore"
+      :style="styles?.loadMore"
+      role="status"
+      aria-label="加载更多"
+    >
+      <span class="k-table__load-more-pill"><KSpin size="sm" /></span>
+    </div>
+    </div>
+    <div v-if="bottomScrollbar && bottomBar.visible && !stackActive && scroll?.y == null" class="k-table__bottom-scrollbar-slot">
+      <div
+        class="k-table__bottom-scrollbar"
+        :class="[{ 'is-fixed': bottomFixed }, classNames?.scrollbar]"
+        :style="[bottomBarStyle, styles?.scrollbar]"
+        aria-hidden="true"
+      >
+        <div class="k-table__bottom-track" @pointerdown="onBottomTrackDown">
+          <div
+            class="k-table__bottom-thumb"
+            :style="{ width: `${bottomBar.thumb}px`, transform: `translateX(${bottomBar.offset}px)` }"
+            @pointerdown.stop="onBottomThumbDown"
+          ></div>
+        </div>
       </div>
     </div>
     <div v-if="showBottomPagination" class="k-table__pagination" :class="[classNames?.pagination, `is-${paginationPlacement.align}`]" :style="styles?.pagination">
@@ -555,6 +745,8 @@ import KEmpty from '../Empty/Empty.vue';
 import KPagination from '../Pagination/Pagination.vue';
 import KOverflowTooltip from './OverflowTooltip.vue';
 import { useTableColumns } from '../../composables/table/useTableColumns';
+import { useBreakpoint } from '../../composables/useBreakpoint';
+import type { KBreakpoint } from '../../composables/useBreakpoint';
 import {
   applyColumnOrder,
   buildSpanPlan,
@@ -572,6 +764,7 @@ import {
   sortRows,
   sortTreeNodes,
   spanCellKey,
+  splitStackColumns,
   widthStyle,
 } from '../../utils/table';
 import {
@@ -672,6 +865,9 @@ type TablePart =
   | 'row'
   | 'filterPanel'
   | 'loading'
+  | 'stack'
+  | 'scrollbar'
+  | 'loadMore'
   | 'pagination';
 
 interface KTableProps<T> {
@@ -749,6 +945,22 @@ interface KTableProps<T> {
   columnDragMode?: 'handle' | 'press';
   /** 行拖拽触发方式：handle 仅行抓手 / press 按住行任意处 */
   rowDragMode?: 'handle' | 'press';
+  /** 强制卡片模式（窄屏卡片堆叠），优先级高于断点 */
+  stacked?: boolean;
+  /** 视口低于该断点时自动切卡片：档位或像素 */
+  stackBreakpoint?: KBreakpoint | number;
+  /** 表格下方常驻横向滚动条：与表体双向同步，页面滚动时吸在视口底部 */
+  bottomScrollbar?: boolean;
+  /** 表头位置：top 常规 / bottom 沉到数据行下方（sticky 时吸在底部） */
+  headerPosition?: 'top' | 'bottom';
+  /** 页面滚动时表头吸顶；表头在底部时吸在视口底部（未设 scroll.y / scroll.x 时生效） */
+  pageSticky?: boolean;
+  /** 页面吸顶偏移：数字按 px，字符串原样，默认 0（可避开站点顶栏） */
+  pageStickyOffset?: number | string;
+  /** 距底部多少 px 触发 reachEnd，默认 40 */
+  reachEndThreshold?: number;
+  /** 业务正在加载更多：期间不再触发 reachEnd，并在表格内部底边上方悬浮加载指示 */
+  loadingMore?: boolean;
   classNames?: Partial<Record<TablePart, string>>;
   styles?: Partial<Record<TablePart, CSSProperties>>;
 }
@@ -780,6 +992,14 @@ const props = withDefaults(defineProps<KTableProps<T>>(), {
   rowDraggable: false,
   columnDragMode: 'handle',
   rowDragMode: 'handle',
+  stacked: false,
+  stackBreakpoint: undefined,
+  bottomScrollbar: false,
+  headerPosition: 'top',
+  pageSticky: false,
+  pageStickyOffset: 0,
+  reachEndThreshold: 40,
+  loadingMore: false,
   expandable: true,
   defaultExpandAll: false,
   rowExpandable: undefined,
@@ -803,6 +1023,7 @@ const emit = defineEmits<{
   expandChange: [keys: KTableRowKey[], row: T, expanded: boolean];
   cellEdit: [payload: KTableCellEditEvent<T>];
   rowReorder: [payload: { row: T; from: number; to: number }];
+  reachEnd: [distance: number];
 }>();
 
 const current = defineModel<number>('current', { default: 1 });
@@ -852,6 +1073,64 @@ const {
   visibleCount: visibleColumnCount,
 } = useTableColumns<T>(() => orderedColumns.value, () => columnVisibility.value);
 
+/* ---------- 响应式卡片：断点自动切换，stacked 可强制 ---------- */
+const stackBreakpointState = useBreakpoint();
+const STACK_BREAKPOINT_ORDER: KBreakpoint[] = ['xs', 'sm', 'md', 'lg', 'xl', 'xxl'];
+const stackBelowPixels = ref(false);
+let stackMedia: MediaQueryList | null = null;
+function syncStackMedia() {
+  if (stackMedia) stackBelowPixels.value = stackMedia.matches;
+}
+watch(
+  () => props.stackBreakpoint,
+  value => {
+    stackMedia?.removeEventListener('change', syncStackMedia);
+    stackMedia = null;
+    stackBelowPixels.value = false;
+    if (
+      typeof value !== 'number' ||
+      typeof window === 'undefined' ||
+      typeof window.matchMedia !== 'function'
+    ) {
+      return;
+    }
+    stackMedia = window.matchMedia(`(max-width: ${Math.max(0, value - 0.02)}px)`);
+    stackBelowPixels.value = stackMedia.matches;
+    stackMedia.addEventListener('change', syncStackMedia);
+  },
+  { immediate: true },
+);
+onScopeDispose(() => stackMedia?.removeEventListener('change', syncStackMedia));
+const stackActive = computed(() => {
+  if (props.stacked) return true;
+  const target = props.stackBreakpoint;
+  if (target == null) return false;
+  if (typeof target === 'number') return stackBelowPixels.value;
+  return (
+    STACK_BREAKPOINT_ORDER.indexOf(stackBreakpointState.current.value) <
+    STACK_BREAKPOINT_ORDER.indexOf(target)
+  );
+});
+let stackCompatWarned = false;
+watch(
+  () =>
+    stackActive.value &&
+    (Boolean(props.spanMethod) ||
+      props.virtual ||
+      props.rowDraggable ||
+      props.columnDraggable ||
+      props.columnResizable),
+  hit => {
+    if (!hit || stackCompatWarned) return;
+    if (!(import.meta as { env?: { DEV?: boolean } }).env?.DEV) return;
+    stackCompatWarned = true;
+    console.warn(
+      '[KTable] 卡片模式不渲染表格：单元格合并、虚拟滚动、列/行拖拽与列宽调整在卡片下已忽略。',
+    );
+  },
+  { immediate: true },
+);
+
 const showColumnBorders = computed(() => props.columnBorders ?? props.bordered);
 const paginationEnabled = computed(() => props.pagination !== false);
 const paginationPlacement = computed(() => {
@@ -897,6 +1176,10 @@ const columnSpan = computed(
     (selectionEnabled.value ? 1 : 0),
 );
 const visibleColumns = computed(() => leaves.value.map(leaf => leaf.column));
+/** 有可编辑列时表体行统一预留编辑控件高度，避免进入编辑撑高行 */
+const hasEditableColumns = computed(() =>
+  leaves.value.some(leaf => leaf.column.editable),
+);
 const toolbarVisible = computed(
   () => props.columnSetting || props.searchable || Boolean(slots.filter || slots.toolbar),
 );
@@ -1194,6 +1477,19 @@ const bodyRows = computed<KTableBodyRow<T>[]>(() => [
   })),
 ]);
 
+/* ---------- 卡片列表：展开详情渲染在卡片内部，不走虚拟窗口 ---------- */
+interface KTableCardItem<T> {
+  key: string;
+  entry: KTableBodyRow<T>;
+}
+const cardItems = computed<KTableCardItem<T>[]>(() => {
+  if (!stackActive.value) return [];
+  return bodyRows.value.map(entry => ({
+    key: `card-${rowKeyOf(entry.row)}`,
+    entry,
+  }));
+});
+
 /* ---------- 虚拟滚动：变量行高（实测缓存 + 前缀和）+ 共用窗口 ---------- */
 interface KTableRenderEntry<T> {
   key: string;
@@ -1466,6 +1762,55 @@ function treeCellProps(entry: KTableBodyRow<T>, leaf: KTableLeaf<T>) {
   };
 }
 
+/* ---------- 卡片字段：首列标题、副标题、键值字段、操作列 ---------- */
+const stackColumns = computed(() => splitStackColumns(leaves.value));
+const cardTitleLeaves = computed(() => {
+  const title = stackColumns.value.title;
+  const firstKey = firstLeafKey.value;
+  /* 树形箭头挂在首列：首列被隐藏时也要把它带回标题，否则卡片里没有展开入口 */
+  if (!treeEnabled.value || !firstKey || title.some(leaf => leaf.key === firstKey)) return title;
+  const first = leafByKey.value.get(firstKey);
+  return first ? [first, ...title] : title;
+});
+const cardSubtitleLeaves = computed(() =>
+  stackColumns.value.subtitle.filter(
+    leaf => !cardTitleLeaves.value.some(title => title.key === leaf.key),
+  ),
+);
+const cardFieldLeaves = computed(() =>
+  stackColumns.value.fields.filter(
+    leaf => !cardTitleLeaves.value.some(title => title.key === leaf.key),
+  ),
+);
+const cardActionLeaves = computed(() => stackColumns.value.actions);
+function cardLabelOf(leaf: KTableLeaf<T>) {
+  return [...leaf.parents, leaf.column.title ?? leaf.key].filter(Boolean).join(' / ');
+}
+function cardHasControls(entry: KTableBodyRow<T>) {
+  return (
+    selectionEnabled.value ||
+    (expandableEnabled.value && !entry.pinned && canExpand(entry.row)) ||
+    (Boolean(slots.card) &&
+      treeEnabled.value &&
+      (entry.hasChildren || (detailEnabled.value && canExpand(entry.row))))
+  );
+}
+/** 卡片内展开详情：与行详情共用 expandedRowKeys，但渲染在卡片内部 */
+function cardExpanded(entry: KTableBodyRow<T>) {
+  return (
+    detailEnabled.value && !entry.pinned && expandedSet.value.has(rowKeyOf(entry.row))
+  );
+}
+/** 树形子卡按层级缩进；缩进从卡片外边距实现，标题内不再重复缩进 */
+function cardIndentStyle(entry: KTableBodyRow<T>): CSSProperties {
+  if (!treeEnabled.value || entry.depth <= 0) return {};
+  return { marginInlineStart: `${entry.depth * treeIndent.value}px` };
+}
+function cardTreeCellProps(entry: KTableBodyRow<T>, leaf: KTableLeaf<T>) {
+  const treeProps = treeCellProps(entry, leaf);
+  return treeProps.showTree ? { ...treeProps, treeDepth: 0 } : treeProps;
+}
+
 /** 固定列偏移按实际渲染宽度累计：拉伸/小数宽度时也能与列宽严丝合缝 */
 const measuredWidths = ref<Record<string, number>>({});
 /** 冻结列宽：固定列 + 横向滚动时把列宽落到整数像素，粘性偏移不再随设备像素取整抖动 */
@@ -1554,6 +1899,7 @@ const tableEl = ref<HTMLElement | null>(null);
 const headEl = ref<HTMLElement | null>(null);
 const headerRowEls = ref<(HTMLElement | null)[]>([]);
 const headerRowTops = ref<number[]>([]);
+const headerRowBottoms = ref<number[]>([]);
 const headerHeight = ref(0);
 const pinnedTopOffsets = ref<number[]>([]);
 const pinnedBottomOffsets = ref<number[]>([]);
@@ -1565,16 +1911,216 @@ let maxScrollLeft = 0;
 let maxScrollTop = 0;
 let syncScrollRaf = 0;
 
+/* ---------- 吸底横向滚动条：独立轨道 + 拖拽拇指，与表体滚动双向同步 ---------- */
+const bottomBar = reactive({ visible: false, thumb: 0, offset: 0, track: 0 });
+const BOTTOM_THUMB_MIN = 32;
+const bottomFixed = ref(false);
+const bottomFixedRect = reactive({ left: 0, width: 0 });
+const bottomBarStyle = computed<CSSProperties>(() =>
+  bottomFixed.value
+    ? { left: `${bottomFixedRect.left}px`, width: `${bottomFixedRect.width}px` }
+    : {},
+);
+let bottomPositionRaf = 0;
+/** 表格跨越视口时把滚动条固定在视口底部；整表进入视口后回到表格下方 */
+function updateBottomBarPosition() {
+  const wrap = wrapEl.value;
+  if (!wrap || !bottomBar.visible || stackActive.value) {
+    bottomFixed.value = false;
+    return;
+  }
+  const rect = wrap.getBoundingClientRect();
+  const viewport = window.innerHeight || document.documentElement.clientHeight;
+  const fixed = rect.top < viewport && rect.bottom > viewport;
+  bottomFixed.value = fixed;
+  if (fixed) {
+    bottomFixedRect.left = rect.left;
+    bottomFixedRect.width = rect.width;
+  }
+}
+function scheduleBottomBarPosition() {
+  if (bottomPositionRaf) return;
+  bottomPositionRaf = requestAnimationFrame(() => {
+    bottomPositionRaf = 0;
+    updateBottomBarPosition();
+  });
+}
+function measureBottomBar() {
+  const wrap = wrapEl.value;
+  if (
+    !wrap ||
+    !props.bottomScrollbar ||
+    stackActive.value ||
+    props.scroll?.y != null
+  ) {
+    bottomBar.visible = false;
+    bottomFixed.value = false;
+    return;
+  }
+  const track = wrap.clientWidth;
+  const overflow = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+  bottomBar.track = track;
+  bottomBar.visible = overflow > 1 && track > 0;
+  if (!bottomBar.visible) {
+    bottomBar.thumb = 0;
+    bottomBar.offset = 0;
+    bottomFixed.value = false;
+    return;
+  }
+  bottomBar.thumb = Math.max(
+    BOTTOM_THUMB_MIN,
+    Math.round((track * track) / (track + overflow)),
+  );
+  syncBottomBar();
+  updateBottomBarPosition();
+}
+function syncBottomBar() {
+  if (!bottomBar.visible) return;
+  const wrap = wrapEl.value;
+  if (!wrap) return;
+  const maxOffset = bottomBar.track - bottomBar.thumb;
+  bottomBar.offset =
+    maxScrollLeft > 0 && maxOffset > 0
+      ? (wrap.scrollLeft / maxScrollLeft) * maxOffset
+      : 0;
+}
+interface BottomDragState {
+  startX: number;
+  startScroll: number;
+  maxOffset: number;
+}
+let bottomDrag: BottomDragState | null = null;
+function onBottomThumbMove(event: PointerEvent) {
+  const wrap = wrapEl.value;
+  if (!bottomDrag || !wrap || bottomDrag.maxOffset <= 0 || maxScrollLeft <= 0) return;
+  const delta = event.clientX - bottomDrag.startX;
+  wrap.scrollLeft = bottomDrag.startScroll + (delta / bottomDrag.maxOffset) * maxScrollLeft;
+}
+function stopBottomThumbDrag() {
+  window.removeEventListener('pointermove', onBottomThumbMove);
+  window.removeEventListener('pointerup', stopBottomThumbDrag);
+  bottomDrag = null;
+  document.body.style.userSelect = '';
+}
+function onBottomThumbDown(event: PointerEvent) {
+  if (!wrapEl.value) return;
+  event.preventDefault();
+  bottomDrag = {
+    startX: event.clientX,
+    startScroll: wrapEl.value.scrollLeft,
+    maxOffset: bottomBar.track - bottomBar.thumb,
+  };
+  document.body.style.userSelect = 'none';
+  window.addEventListener('pointermove', onBottomThumbMove);
+  window.addEventListener('pointerup', stopBottomThumbDrag, { once: true });
+}
+function onBottomTrackDown(event: PointerEvent) {
+  if (event.target !== event.currentTarget) return;
+  const wrap = wrapEl.value;
+  const track = event.currentTarget as HTMLElement;
+  const maxOffset = bottomBar.track - bottomBar.thumb;
+  if (!wrap || maxOffset <= 0 || maxScrollLeft <= 0) return;
+  const rect = track.getBoundingClientRect();
+  const ratio = Math.min(
+    1,
+    Math.max(0, (event.clientX - rect.left - bottomBar.thumb / 2) / maxOffset),
+  );
+  wrap.scrollLeft = ratio * maxScrollLeft;
+}
+onScopeDispose(stopBottomThumbDrag);
+let bottomListenersOn = false;
+function setBottomBarListeners(active: boolean) {
+  if (active === bottomListenersOn || typeof window === 'undefined') return;
+  bottomListenersOn = active;
+  if (active) {
+    window.addEventListener('scroll', scheduleBottomBarPosition, { passive: true });
+    window.addEventListener('resize', scheduleBottomBarPosition);
+    return;
+  }
+  window.removeEventListener('scroll', scheduleBottomBarPosition);
+  window.removeEventListener('resize', scheduleBottomBarPosition);
+  if (bottomPositionRaf) cancelAnimationFrame(bottomPositionRaf);
+  bottomPositionRaf = 0;
+}
+onMounted(() => setBottomBarListeners(props.bottomScrollbar));
+watch(() => props.bottomScrollbar, active => setBottomBarListeners(active));
+onScopeDispose(() => setBottomBarListeners(false));
+watch([() => props.bottomScrollbar, () => props.scroll?.y, stackActive], () =>
+  nextTick(measureLayout),
+);
+
+/* ---------- 页面级吸顶：不创建内部滚动容器时，直接把表头 sticky 到视口 ---------- */
+const headerAtBottom = computed(() => props.headerPosition === 'bottom');
+const pageStickyActive = computed(
+  () => props.pageSticky && props.scroll?.y == null && props.scroll?.x == null,
+);
+const rootStyle = computed<CSSProperties>(() => {
+  const style: Record<string, string> = {
+    '--k-table-head-height': `${headerHeight.value}px`,
+  };
+  if (pageStickyActive.value) {
+    const offset = props.pageStickyOffset;
+    style[headerAtBottom.value ? '--k-table-page-sticky-bottom' : '--k-table-page-sticky-top'] =
+      typeof offset === 'number' ? `${offset}px` : offset;
+  }
+  return style as CSSProperties;
+});
+let pageStickyWarned = false;
+watch(
+  () => props.pageSticky && (props.scroll?.x != null || props.scroll?.y != null),
+  hit => {
+    if (!hit || pageStickyWarned) return;
+    if (!(import.meta as { env?: { DEV?: boolean } }).env?.DEV) return;
+    pageStickyWarned = true;
+    console.warn(
+      '[KTable] pageSticky 要求表格没有内部滚动；检测到 scroll.x / scroll.y，已忽略页面吸顶（scroll.y 请用 sticky）。',
+    );
+  },
+  { immediate: true },
+);
+
+/* ---------- 触底加载：进入阈值触发一次，离开阈值后重新武装 ---------- */
+let reachEndArmed = true;
+function checkReachEnd() {
+  const wrap = wrapEl.value;
+  if (!wrap || props.scroll?.y == null) return;
+  const threshold = Math.max(0, props.reachEndThreshold);
+  const distance = Math.max(0, maxScrollTop - wrap.scrollTop);
+  if (distance <= threshold) {
+    if (reachEndArmed && !props.loadingMore && maxScrollTop > 0) {
+      reachEndArmed = false;
+      emit('reachEnd', distance);
+    }
+    return;
+  }
+  if (distance > threshold * 2) reachEndArmed = true;
+}
+watch(
+  () => props.dataSource.length,
+  () => {
+    reachEndArmed = true;
+    nextTick(measureLayout);
+  },
+);
+
 function setHeaderRowEl(el: Element | ComponentPublicInstance | null, rowIndex: number) {
   headerRowEls.value[rowIndex] = (el as HTMLElement | null) ?? null;
 }
 function measureHeaderRows() {
+  const heights = headerRowEls.value.map(el => el?.offsetHeight ?? 0);
   let top = 0;
-  headerRowTops.value = headerRowEls.value.map(el => {
+  headerRowTops.value = heights.map(height => {
     const rowTop = top;
-    top += el?.offsetHeight ?? 0;
+    top += height;
     return rowTop;
   });
+  let bottom = 0;
+  const bottoms: number[] = new Array(heights.length);
+  for (let index = heights.length - 1; index >= 0; index--) {
+    bottoms[index] = bottom;
+    bottom += heights[index];
+  }
+  headerRowBottoms.value = bottoms;
   headerHeight.value = top;
 }
 /** 固定行堆叠：top 从表头下方累加；bottom 从容器底部向上累加 */
@@ -1596,7 +2142,7 @@ function measurePinnedRows() {
 
   const bottomHeights = heights(':scope > tbody > tr.is-pinned-bottom');
   const bottoms: number[] = new Array(bottomHeights.length);
-  let bottom = 0;
+  let bottom = props.sticky && headerAtBottom.value ? headerHeight.value : 0;
   for (let index = bottomHeights.length - 1; index >= 0; index--) {
     bottoms[index] = bottom;
     bottom += bottomHeights[index];
@@ -1679,6 +2225,7 @@ function syncScrollState() {
   scrollState.right = el.scrollLeft < maxScrollLeft - edge;
   scrollState.top = el.scrollTop > edge;
   scrollState.bottom = el.scrollTop < maxScrollTop - edge;
+  syncBottomBar();
 }
 function measureLayout() {
   if (measuringLayout) return;
@@ -1698,11 +2245,47 @@ function measureLayout() {
       maxScrollTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
     }
     scrollRange.value = maxScrollLeft;
+    measureBottomBar();
     updateVirtualWindow();
+    correctBottomStickyHeader();
     syncScrollState();
   } finally {
     measuringLayout = false;
   }
+}
+/* Chromium 在内容高度变化后不会立即重算底部粘性；按差量补偿 scrollTop，借这次真实滚动让原生 sticky 复位 */
+let lastHeaderScrollHeight = -1;
+let stickyScrollSeen = false;
+function correctBottomStickyHeader() {
+  if (!props.sticky || !headerAtBottom.value || props.scroll?.y == null) {
+    lastHeaderScrollHeight = -1;
+    return;
+  }
+  const wrap = wrapEl.value;
+  const head = headEl.value;
+  if (!wrap || !head) return;
+  const height = wrap.scrollHeight;
+  if (lastHeaderScrollHeight < 0) {
+    lastHeaderScrollHeight = height;
+    return;
+  }
+  if (height === lastHeaderScrollHeight) return;
+  lastHeaderScrollHeight = height;
+  const rect = wrap.getBoundingClientRect();
+  const viewportTop = rect.top + wrap.clientTop;
+  const pinnedTop = viewportTop + wrap.clientHeight - headerHeight.value;
+  const naturalTop = viewportTop + height - headerHeight.value - wrap.scrollTop;
+  const actualTop = head.getBoundingClientRect().top;
+  /* 表头还没被原生 sticky 定位过时不动滚动，等它先稳定贴到容器底部 */
+  if (!stickyScrollSeen) {
+    if (Math.abs(actualTop - pinnedTop) >= 1) return;
+    stickyScrollSeen = true;
+  }
+  const expectedTop = Math.min(naturalTop, pinnedTop);
+  const delta = actualTop - expectedTop;
+  if (Math.abs(delta) < 1) return;
+  const maxTop = Math.max(0, height - wrap.clientHeight);
+  wrap.scrollTop = Math.min(Math.max(wrap.scrollTop + delta, 0), maxTop);
 }
 /* 自身写行高会触发 ResizeObserver：合并到下一帧，并避免测量过程中重入 */
 function scheduleMeasureLayout() {
@@ -1713,12 +2296,14 @@ function scheduleMeasureLayout() {
   });
 }
 function onWrapScroll() {
+  stickyScrollSeen = true;
   /* 滚动帧里不读 scrollWidth/scrollHeight（会强制排版），状态合并到每帧一次 */
   if (syncScrollRaf) return;
   syncScrollRaf = requestAnimationFrame(() => {
     syncScrollRaf = 0;
     syncScrollState();
     updateVirtualWindow();
+    checkReachEnd();
   });
 }
 onMounted(async () => {
@@ -1908,8 +2493,13 @@ function fixedLayerStyle(side: 'left' | 'right'): CSSProperties {
   }
   return style as CSSProperties;
 }
-function overlayHeaderStyle(rowIndex: number): CSSProperties {
-  return props.sticky ? { top: `${headerRowTops.value[rowIndex] ?? 0}px` } : {};
+function overlayHeaderStyle(cell: KTableHeaderCell<T>, rowIndex: number): CSSProperties {
+  if (!props.sticky) return {};
+  if (headerAtBottom.value) {
+    const endIndex = rowIndex + Math.max(0, (cell.rowSpan ?? 1) - 1);
+    return { bottom: `${headerRowBottoms.value[endIndex] ?? 0}px` };
+  }
+  return { top: `${headerRowTops.value[rowIndex] ?? 0}px` };
 }
 function overlayHeaderCells(row: KTableHeaderCell<T>[], side: 'left' | 'right') {
   return row.filter(cell => headerSide(cell) === side);
@@ -1988,7 +2578,15 @@ function headerSide(cell: KTableHeaderCell<T>): 'left' | 'right' | undefined {
 }
 function headerCellStyle(cell: KTableHeaderCell<T>, rowIndex: number): CSSProperties {
   const style: CSSProperties = {};
-  if (props.sticky) style.top = `${headerRowTops.value[rowIndex] ?? 0}px`;
+  if (props.sticky) {
+    if (headerAtBottom.value) {
+      const endIndex = rowIndex + Math.max(0, (cell.rowSpan ?? 1) - 1);
+      style.top = 'auto';
+      style.bottom = `${headerRowBottoms.value[endIndex] ?? 0}px`;
+    } else {
+      style.top = `${headerRowTops.value[rowIndex] ?? 0}px`;
+    }
+  }
   const side = headerSide(cell);
   if (!side) return style;
   const keys = cell.isGroup ? leafKeysUnder(cell.column) : [(cell.leafKey ?? '')];
@@ -2600,7 +3198,10 @@ const KBodyCellInner = defineComponent({
           const root = inputRef.value?.$el as HTMLElement | undefined;
           const input = root?.querySelector?.('input, textarea') as HTMLInputElement | null;
           input?.focus();
-          input?.select?.();
+          if (input) {
+            const end = input.value.length;
+            input.setSelectionRange(end, end);
+          }
         });
       },
       { immediate: true },
@@ -2853,6 +3454,7 @@ const KHeadCell = defineComponent({
   props: {
     cell: { type: Object as PropType<KTableHeaderCell<T>>, required: true },
     showGrip: { type: Boolean, default: false },
+    filterPlacement: { type: String as PropType<'bottomLeft' | 'topLeft'>, default: 'bottomLeft' },
   },
   setup(headProps) {
     return () => {
@@ -2892,7 +3494,7 @@ const KHeadCell = defineComponent({
                 filterOpen[key] = value;
               },
               trigger: 'click',
-              placement: 'bottomLeft',
+              placement: headProps.filterPlacement,
               arrow: false,
             },
             {
@@ -3015,8 +3617,13 @@ defineSlots<{
   /* 表头必须是实色：粘性表头下方滚动内容会透出半透明底色 */
   --k-table-head-bg: color-mix(in oklab, var(--k-color-text-base) 1.5%, var(--k-color-bg-container));
   /* 固定列会盖在滚动单元格上，任何行的状态色都必须是实色 */
-  --k-table-hover-bg: color-mix(in oklab, var(--k-color-text-base) 2%, var(--k-color-bg-container));
-  --k-table-stripe-bg: color-mix(in oklab, var(--k-color-text-base) 2%, var(--k-color-bg-container));
+  --k-table-hover-bg: color-mix(in oklab, var(--k-color-text-base) 2.5%, var(--k-color-bg-container));
+  --k-table-stripe-bg: color-mix(in oklab, var(--k-color-text-base) 1%, var(--k-color-bg-container));
+  /* 汇总行用主色轻染；展开行与页面同底，靠留白和分隔线区分 */
+  --k-table-summary-bg: color-mix(in oklab, var(--k-color-primary) 2%, var(--k-color-bg-container));
+  --k-table-expanded-bg: var(--k-color-bg-container);
+  /* 分隔线沿用全局次级边框色，和 Card 等组件保持一致 */
+  --k-table-line: var(--k-color-border-secondary);
   --k-table-border: var(--k-neutral-2);
 
   display: flex;
@@ -3025,6 +3632,10 @@ defineSlots<{
   margin: 0;
   color: var(--k-color-text);
   font-size: var(--k-font-size);
+}
+.k-table__scroll {
+  position: relative;
+  min-width: 0;
 }
 .k-table__wrap {
   position: relative;
@@ -3043,6 +3654,8 @@ defineSlots<{
   position: sticky;
   z-index: 6;
   min-width: 0;
+  /* 浮层容器不吃指针：占位区事件穿透到主表；具体单元格再单独打开 */
+  pointer-events: none;
   /* 只有左右两块，独立合成后平移吸附跟随滚动帧，快速滚动不抖 */
   will-change: transform;
 }
@@ -3121,8 +3734,15 @@ defineSlots<{
   border-spacing: 0;
   table-layout: fixed;
 }
-.k-table__fixed-layer .is-overlay-spacer,
-.k-table__fixed-layer .is-overlay-spacer > .k-table__cell {
+.k-table__fixed-layer .k-table__fixed-table {
+  /* 表格本体不吃指针：展开行占位区让事件落到主表的整行内容上 */
+  pointer-events: none;
+}
+.k-table__fixed-layer .k-table__fixed-table .k-table__cell {
+  pointer-events: auto;
+}
+.k-table__fixed-layer .k-table__fixed-table .is-overlay-spacer,
+.k-table__fixed-layer .k-table__fixed-table .is-overlay-spacer > .k-table__cell {
   pointer-events: none;
 }
 .k-table__fixed-layer .is-overlay-spacer > .k-table__cell {
@@ -3159,12 +3779,22 @@ defineSlots<{
   /* 无空格长串（邮箱/URL）在单元格内换行，避免压到相邻列；break-word 不影响自动布局列的最小宽度 */
   overflow-wrap: break-word;
 }
+/* 可编辑表：行高统一按默认编辑控件（KInput sm）预留，进入编辑不再撑高行。
+   自定义 editRender 高于默认控件时仍会撑高当前行。 */
+.k-table.has-editable {
+  --k-table-row-min-height: calc(
+    var(--k-control-height-sm) + var(--k-table-cell-padding-y) * 2
+  );
+}
+.k-table.has-editable .k-table__body .k-table__row > .k-table__cell {
+  height: var(--k-table-row-min-height);
+}
 /* 行分隔线用背景绘制而不是真边框：行高保持偶数，单元格内容落在整像素，
    跨行表头纵向居中也才不会出现 0.5px，滚动重绘时不上下跳 */
 .k-table.is-row-borders .k-table__cell {
   background-image: linear-gradient(
     to top,
-    var(--k-table-border) 0 var(--k-line-width),
+    var(--k-table-line) 0 var(--k-line-width),
     transparent var(--k-line-width)
   );
   background-repeat: no-repeat;
@@ -3494,23 +4124,134 @@ defineSlots<{
   background: transparent;
 }
 .k-table.is-bordered .k-table__wrap {
-  border: var(--k-line-width) solid var(--k-table-border);
+  border: var(--k-line-width) solid var(--k-table-line);
+}
+/* 吸底横向滚动条：表格跨越视口时固定在视口底部；未限高时隐藏原生滚动条避免重复 */
+.k-table.has-bottom-scrollbar .k-table__wrap {
+  scrollbar-width: none;
+}
+.k-table__bottom-scrollbar-slot {
+  position: relative;
+  height: 14px;
+}
+.k-table__bottom-scrollbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  padding: 4px 0 2px;
+  background: var(--k-color-bg-container);
+  overscroll-behavior: contain;
+}
+.k-table__bottom-scrollbar.is-fixed {
+  position: fixed;
+  top: auto;
+  right: auto;
+  bottom: 0;
+  z-index: 4;
+  box-shadow: 0 -1px 0 var(--k-table-border);
+}
+.k-table__bottom-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--k-color-fill-secondary);
+  cursor: pointer;
+  touch-action: none;
+}
+.k-table__bottom-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--k-color-text-quaternary);
+  cursor: grab;
+  transition: background-color 0.15s;
+}
+.k-table__bottom-thumb:hover {
+  background: var(--k-color-text-tertiary);
+}
+.k-table__bottom-thumb:active {
+  background: var(--k-color-text-tertiary);
+  cursor: grabbing;
 }
 .k-table.is-column-borders .k-table__cell + .k-table__cell {
-  border-inline-start: var(--k-line-width) solid var(--k-table-border);
+  border-inline-start: var(--k-line-width) solid var(--k-table-line);
 }
 /* 右浮层首列要补与主表一致的分隔线；左浮层由相邻选择/展开列自然产生 */
 .k-table.is-column-borders .k-table__fixed-layer.is-right .k-table__cell:first-child {
-  border-inline-start: var(--k-line-width) solid var(--k-table-border);
+  border-inline-start: var(--k-line-width) solid var(--k-table-line);
 }
 /* 行首若干列被合并覆盖后，本行首格没有“前一个兄弟”，补回纵向分隔线 */
 .k-table.is-column-borders .k-table__cell.is-span-edge {
-  border-inline-start: var(--k-line-width) solid var(--k-table-border);
+  border-inline-start: var(--k-line-width) solid var(--k-table-line);
 }
 .k-table.is-sticky .k-table__cell--head {
   position: sticky;
   top: 0;
   z-index: 4;
+}
+/* 表头沉底：整组表头移到数据行之后；汇总行转为普通行组，排在最底部表头之上 */
+.k-table.is-header-bottom .k-table__table > .k-table__head,
+.k-table.is-header-bottom .k-table__fixed-table > .k-table__head {
+  display: table-footer-group;
+}
+.k-table.is-header-bottom .k-table__table > tfoot,
+.k-table.is-header-bottom .k-table__fixed-table > tfoot {
+  display: table-row-group;
+}
+.k-table.is-header-bottom.is-row-borders .k-table__head-row:first-child > .k-table__cell {
+  background-image:
+    linear-gradient(
+      to bottom,
+      var(--k-table-line) 0 var(--k-line-width),
+      transparent var(--k-line-width)
+    ),
+    linear-gradient(
+      to top,
+      var(--k-table-line) 0 var(--k-line-width),
+      transparent var(--k-line-width)
+    );
+  background-position: left top, left bottom;
+}
+.k-table.is-sticky.is-header-bottom .k-table__cell--head {
+  top: auto;
+  /* 跨整组表头的选择/展开列没有逐行偏移，直接贴住容器底部；其余列的内联 bottom 优先级更高 */
+  bottom: 0;
+}
+.k-table.is-page-sticky .k-table__head {
+  position: sticky;
+  top: var(--k-table-page-sticky-top, 0px);
+  z-index: 4;
+}
+.k-table.is-page-sticky-bottom .k-table__head {
+  position: sticky;
+  bottom: var(--k-table-page-sticky-bottom, 0px);
+  z-index: 4;
+}
+.k-table__load-more {
+  position: absolute;
+  right: 0;
+  bottom: var(--k-size-sm);
+  left: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.k-table__load-more-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 14px;
+  border: var(--k-line-width) solid var(--k-color-border-secondary);
+  border-radius: 999px;
+  background: var(--k-color-bg-container);
+  box-shadow: var(--k-box-shadow);
+}
+/* 底部粘性表头会占住表格底部，加载指示让到表头上方 */
+.k-table.is-sticky.is-header-bottom .k-table__load-more {
+  bottom: calc(var(--k-table-head-height, 0px) + var(--k-size-sm));
 }
 .k-table .k-table__cell.is-fixed {
   position: sticky;
@@ -3626,8 +4367,130 @@ defineSlots<{
   overflow: hidden;
 }
 .k-table .k-table__expanded-row > .k-table__cell {
-  background-color: var(--k-color-fill-quaternary);
+  background-color: var(--k-table-expanded-bg);
   padding: var(--k-size) var(--k-table-cell-padding-x);
+}
+/* ---------- 响应式卡片：表头与固定列不参与渲染，每行一张卡片 ---------- */
+.k-table.is-stacked .k-table__wrap {
+  border: 0;
+}
+.k-table__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-size-sm);
+}
+.k-table__cards-empty {
+  padding: var(--k-size-lg) 0;
+}
+.k-table__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-size-sm);
+  padding: var(--k-size);
+  border: var(--k-line-width) solid var(--k-color-border-secondary);
+  border-radius: var(--k-border-radius);
+  background-color: var(--k-color-bg-container);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.k-table__card:hover {
+  border-color: var(--k-color-border);
+}
+.k-table__card.is-selected {
+  border-color: var(--k-color-primary);
+  box-shadow: inset 0 0 0 1px var(--k-color-primary);
+}
+.k-table__card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+/* 勾选、展开、标题统一 22px 行高，三者间距一致 */
+.k-table__card-select {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 22px;
+}
+.k-table__card-head .k-table__expand {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+.k-table__card-head .k-table__tree-caret {
+  width: 22px;
+  height: 22px;
+  margin-inline-end: 0;
+}
+.k-table__card-heading {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.k-table__card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--k-font-size-lg, 15px);
+  font-weight: var(--k-font-weight-heading);
+  line-height: 22px;
+}
+.k-table__card-subtitle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  color: var(--k-color-text-tertiary);
+  font-size: var(--k-font-size-sm, 12px);
+  line-height: 1.4;
+}
+.k-table__card-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--k-size-sm) var(--k-size);
+  padding-top: var(--k-size-sm);
+  border-top: var(--k-line-width) solid var(--k-color-split);
+}
+.k-table__card-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.k-table__card-label {
+  color: var(--k-color-text-tertiary);
+  font-size: var(--k-font-size-sm, 12px);
+  line-height: 1.4;
+}
+.k-table__card-value {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+/* 卡片里不做单行截断，全文换行展示 */
+.k-table__card .k-table__ellipsis-text {
+  display: block;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+.k-table__card .k-table__tree-content {
+  overflow: visible;
+}
+.k-table__card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-top: var(--k-size-sm);
+  border-top: var(--k-line-width) solid var(--k-color-split);
+}
+.k-table__card-expanded {
+  padding-top: var(--k-size-sm);
+  border-top: var(--k-line-width) solid var(--k-color-split);
 }
 .k-table__sr-only {
   position: absolute;
@@ -3655,7 +4518,7 @@ defineSlots<{
   background-color: var(--k-color-bg-container);
 }
 .k-table .k-table__summary {
-  background-color: var(--k-table-head-bg);
+  background-color: var(--k-table-summary-bg);
   font-weight: var(--k-font-weight-strong);
 }
 .k-table__loading {

@@ -17,7 +17,7 @@
       v-if="openState"
       v-bind="rootAttrs"
       class="k-modal"
-      :class="classNames?.root"
+      :class="[`k-modal--${size}`, classNames?.root]"
       :style="styles?.root"
     >
       <div v-if="mask" v-bind="maskAttrs" class="k-modal__mask" :class="classNames?.mask" :style="styles?.mask" />
@@ -115,7 +115,7 @@ import { usePopupHost } from '../../composables/usePopup';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 import { getLastPointer } from '../../utils/interaction';
-import type { KModalPlacement } from './service';
+import type { KModalPlacement, KModalSize } from './service';
 
 defineOptions({ name: 'KModal' });
 
@@ -129,6 +129,7 @@ export interface KModalRenderScope {
   icon: string | VNode | undefined;
   /** 归一化后的 CSS 宽度值 */
   width: string;
+  size: KModalSize;
   placement: KModalPlacement;
   mask: boolean;
   maskClosable: boolean;
@@ -168,6 +169,8 @@ interface KModalProps {
   icon?: string | VNode;
   /** px 数值或 CSS 宽度串（antd modalWidth 同款默认 520） */
   width?: number | string;
+  /** 弹窗尺寸：标题、正文、边距与关闭钮同步缩放 */
+  size?: KModalSize;
   /** 九宫格屏幕落位：弹窗打开后停在视口哪一格（缘距沿用 wrap 留白：上/下 80、左/右 24、center 20） */
   placement?: KModalPlacement;
   mask?: boolean;
@@ -188,6 +191,7 @@ interface KModalProps {
 const props = withDefaults(defineProps<KModalProps>(), {
   open: false,
   width: 520,
+  size: 'md',
   placement: 'top',
   mask: true,
   maskClosable: true,
@@ -430,6 +434,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KModa
     content: props.content,
     icon: props.icon,
     width: widthCss.value,
+    size: props.size,
     placement: props.placement,
     mask: props.mask,
     maskClosable: props.maskClosable,
@@ -482,8 +487,12 @@ defineSlots<{
 .k-modal {
   --k-modal-bg: var(--k-color-bg-elevated);
   --k-modal-radius: var(--k-border-radius-lg);
-  --k-modal-padding: calc(var(--k-size-lg) + var(--k-size-xxs));
-  --k-modal-header-pad-x: var(--k-size-lg);
+  --k-modal-pad-y: var(--k-size-md);
+  --k-modal-pad-x: var(--k-size-lg);
+  --k-modal-header-gap: var(--k-size-sm);
+  --k-modal-title-size: var(--k-font-size-lg);
+  --k-modal-body-size: var(--k-font-size);
+  --k-modal-close-size: var(--k-font-size);
   --k-modal-title-color: var(--k-color-text);
   /* 内容滚动：dialog 限高 = 视口 − wrap 上下留白（上/下排 80×2）；超高时 body 内滚，头/脚不动 */
   --k-modal-max-height: calc(100vh - var(--k-size) * 10);
@@ -495,6 +504,22 @@ defineSlots<{
   overflow: hidden;
   outline: 0;
   font-family: inherit;
+}
+.k-modal--sm {
+  --k-modal-pad-y: var(--k-size);
+  --k-modal-pad-x: var(--k-size-md);
+  --k-modal-header-gap: var(--k-size-xs);
+  --k-modal-title-size: var(--k-font-size);
+  --k-modal-body-size: var(--k-font-size-sm);
+  --k-modal-close-size: var(--k-font-size-sm);
+}
+.k-modal--lg {
+  --k-modal-pad-y: var(--k-size-lg);
+  --k-modal-pad-x: var(--k-size-xl);
+  --k-modal-header-gap: var(--k-size);
+  --k-modal-title-size: calc(var(--k-font-size-lg) + 2px);
+  --k-modal-body-size: var(--k-font-size-lg);
+  --k-modal-close-size: var(--k-font-size-lg);
 }
 /* 中排（left/center/right）垂直居中：留白收 20，限高同步换档 */
 .k-modal[data-placement='left'],
@@ -582,7 +607,7 @@ defineSlots<{
   display: flex;
   align-items: flex-start;
   gap: var(--k-size-xs);
-  padding: var(--k-modal-padding) var(--k-modal-header-pad-x) var(--k-size-sm);
+  padding: var(--k-modal-pad-y) var(--k-modal-pad-x) var(--k-modal-header-gap);
 }
 /* 拖拽把手 = 整个 header（naive 同款）；touch-action 关掉触屏原生滚动/缩放手势，位移全归 pointer 链 */
 .k-modal__header.is-draggable {
@@ -600,14 +625,14 @@ defineSlots<{
   align-items: center;
   gap: var(--k-size-xs);
   color: var(--k-modal-title-color);
-  font-size: var(--k-font-size-lg);
+  font-size: var(--k-modal-title-size);
   font-weight: var(--k-font-weight-strong);
   line-height: var(--k-line-height);
 }
 .k-modal__icon {
   flex: none;
   display: inline-flex;
-  font-size: calc(var(--k-font-size-lg) * 1.2);
+  font-size: calc(var(--k-modal-title-size) * 1.2);
 }
 .k-modal__close {
   flex: none;
@@ -618,7 +643,7 @@ defineSlots<{
   border-radius: var(--k-border-radius);
   background: transparent;
   color: var(--k-color-text-tertiary);
-  font-size: var(--k-font-size);
+  font-size: var(--k-modal-close-size);
   cursor: pointer;
   transition: color var(--k-motion-duration-fast) var(--k-motion-ease-in-out-cubic);
 }
@@ -626,14 +651,17 @@ defineSlots<{
   color: var(--k-color-text);
 }
 
+.k-modal__header + .k-modal__body {
+  margin-block-start: calc(var(--k-modal-header-gap) * -1);
+}
 .k-modal__body {
   flex: auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 var(--k-modal-header-pad-x) var(--k-size-md);
+  padding: var(--k-modal-pad-y) var(--k-modal-pad-x);
   color: var(--k-color-text);
-  font-size: var(--k-font-size);
+  font-size: var(--k-modal-body-size);
   line-height: var(--k-line-height);
   word-break: break-word;
   scrollbar-width: thin;
@@ -650,13 +678,16 @@ defineSlots<{
   background-color: var(--k-color-fill);
 }
 
+.k-modal__body + .k-modal__footer {
+  margin-block-start: calc(var(--k-modal-pad-y) * -1);
+}
 .k-modal__footer {
   flex: none;
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: var(--k-size-xs);
-  padding: var(--k-size-md) var(--k-modal-header-pad-x) var(--k-modal-padding);
+  padding: var(--k-modal-pad-y) var(--k-modal-pad-x);
 }
 
 @keyframes k-modal-zoom {
@@ -682,7 +713,7 @@ defineSlots<{
     margin: -10px -10px 0 0;
   }
   .k-modal__footer {
-    padding-bottom: calc(var(--k-modal-padding) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(var(--k-modal-pad-y) + env(safe-area-inset-bottom, 0px));
   }
 }
 </style>

@@ -208,6 +208,10 @@ defineExpose({ inputEl, focus: () => inputEl.value?.focus() });
   transform: translate(-50%, -57%) rotate(45deg) scale(1);
 }
 /* 半选 = 居中横条（勾隐藏） */
+.k-checkbox.is-indeterminate .k-checkbox__box {
+  background-color: var(--k-checkbox-checked-bg);
+  border-color: var(--k-checkbox-checked-border);
+}
 .k-checkbox.is-indeterminate .k-checkbox__box::before {
   content: '';
   position: absolute;

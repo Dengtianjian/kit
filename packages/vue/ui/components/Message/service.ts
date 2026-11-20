@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import type { CSSProperties, VNode, VNodeChild } from 'vue';
+import type { KSize } from '../../utils/size';
 
 /**
  * message 实例 API（挂 useKApp().message，无全局静态）。
@@ -7,6 +8,7 @@ import type { CSSProperties, VNode, VNodeChild } from 'vue';
  */
 
 export type KMessageType = 'info' | 'success' | 'error' | 'warning' | 'loading';
+export type KMessageSize = Extract<KSize, 'sm' | 'md' | 'lg'>;
 
 export type KMessagePart = 'root' | 'icon' | 'content';
 
@@ -14,6 +16,7 @@ export interface KMessageRenderScope {
   content: string | VNode;
   type: KMessageType;
   icon?: string | VNode | null;
+  size: KMessageSize;
   /** 手动关闭当前这条（仍走 onClose/计时清理） */
   close: () => void;
 }
@@ -23,6 +26,8 @@ export interface KMessageConfig {
   /** 自动关闭秒数；0 = 常驻（默认 3） */
   duration?: number;
   type?: KMessageType;
+  /** 尺寸：字号、内边距、图标同步缩放 */
+  size?: KMessageSize;
   /** 覆盖类型图标；null = 无图标 */
   icon?: string | VNode | null;
   /** 同 key 复用一条（更新内容而非叠加） */
@@ -54,6 +59,7 @@ export interface KMessageHolderItem {
   key?: string;
   type: KMessageType;
   content: string | VNode;
+  size: KMessageSize;
   icon?: string | VNode | null;
   duration: number;
   render?: (scope: KMessageRenderScope) => VNodeChild;
@@ -95,6 +101,7 @@ export function createMessageService(): KMessageService {
       key: config.key,
       type: config.type ?? 'info',
       content: config.content,
+      size: config.size ?? 'md',
       icon: config.icon,
       duration: config.duration ?? 3,
       render: config.render,

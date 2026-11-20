@@ -14,7 +14,7 @@
     :style="styles?.field"
   >
     <span v-if="hasLabel" class="k-switch-field__label" :class="classNames?.label" :style="styles?.label">
-      <slot name="label">{{ label }}</slot>
+      <slot name="label"><slot>{{ label }}</slot></slot>
     </span>
   <button
       ref="rootEl"
@@ -57,11 +57,12 @@ import type { CSSProperties, VNodeChild } from 'vue';
 import { FORM_ITEM_KEY } from '../Form/context';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
+import type { KSize } from '../../utils/size';
 
 defineOptions({ name: 'KSwitch' });
 
 type SwitchPart = 'root' | 'handle' | 'field' | 'label';
-type SwitchSize = 'large' | 'medium' | 'small';
+type SwitchSize = Extract<KSize, 'sm' | 'md' | 'lg'>;
 export type KSwitchLabelPosition = 'left' | 'right' | 'top' | 'bottom';
 
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
@@ -112,7 +113,7 @@ interface KSwitchProps {
 }
 
 const props = withDefaults(defineProps<KSwitchProps>(), {
-  size: 'medium',
+  size: 'md',
   disabled: false,
   loading: false,
   labelPosition: 'left',
@@ -159,7 +160,10 @@ const rootOn = { click: toggle, keydown: onKeydown };
 
 const slots = useSlots();
 const hasLabel = computed(
-  () => (props.label != null && props.label !== '') || Boolean(slots.label),
+  () =>
+    (props.label != null && props.label !== '') ||
+    Boolean(slots.label) ||
+    Boolean(slots.default),
 );
 
 const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KSwitchRenderScope>(
@@ -188,6 +192,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KSwit
 defineSlots<{
   render?(scope: KSwitchRenderScope): VNodeChild;
   label?(): VNodeChild;
+  default?(): VNodeChild;
 }>();
 
 defineExpose({ focus });
@@ -257,11 +262,11 @@ defineExpose({ focus });
   font-family: inherit;
   transition: background-color var(--k-motion-duration-mid) var(--k-motion-ease-in-out-cubic);
 }
-.k-switch--large {
+.k-switch--lg {
   width: var(--k-switch-track-width-lg);
   height: var(--k-switch-track-height-lg);
 }
-.k-switch--small {
+.k-switch--sm {
   width: var(--k-switch-track-width-sm);
   height: var(--k-switch-track-height-sm);
 }
@@ -301,18 +306,18 @@ defineExpose({ focus });
 .k-switch.is-checked .k-switch__handle {
   left: calc(var(--k-switch-track-width) - (var(--k-switch-track-height) - 4px) - 2px);
 }
-.k-switch--large .k-switch__handle {
+.k-switch--lg .k-switch__handle {
   width: calc(var(--k-switch-track-height-lg) - 4px);
   height: calc(var(--k-switch-track-height-lg) - 4px);
 }
-.k-switch--large.is-checked .k-switch__handle {
+.k-switch--lg.is-checked .k-switch__handle {
   left: calc(var(--k-switch-track-width-lg) - (var(--k-switch-track-height-lg) - 4px) - 2px);
 }
-.k-switch--small .k-switch__handle {
+.k-switch--sm .k-switch__handle {
   width: calc(var(--k-switch-track-height-sm) - 4px);
   height: calc(var(--k-switch-track-height-sm) - 4px);
 }
-.k-switch--small.is-checked .k-switch__handle {
+.k-switch--sm.is-checked .k-switch__handle {
   left: calc(var(--k-switch-track-width-sm) - (var(--k-switch-track-height-sm) - 4px) - 2px);
 }
 
@@ -323,16 +328,16 @@ defineExpose({ focus });
 .k-switch.is-checked:not(.is-disabled):active .k-switch__handle {
   left: calc(var(--k-switch-track-width) - var(--k-switch-track-height) - 2px);
 }
-.k-switch--large:not(.is-disabled):active .k-switch__handle {
+.k-switch--lg:not(.is-disabled):active .k-switch__handle {
   width: var(--k-switch-track-height-lg);
 }
-.k-switch--large.is-checked:not(.is-disabled):active .k-switch__handle {
+.k-switch--lg.is-checked:not(.is-disabled):active .k-switch__handle {
   left: calc(var(--k-switch-track-width-lg) - var(--k-switch-track-height-lg) - 2px);
 }
-.k-switch--small:not(.is-disabled):active .k-switch__handle {
+.k-switch--sm:not(.is-disabled):active .k-switch__handle {
   width: var(--k-switch-track-height-sm);
 }
-.k-switch--small.is-checked:not(.is-disabled):active .k-switch__handle {
+.k-switch--sm.is-checked:not(.is-disabled):active .k-switch__handle {
   left: calc(var(--k-switch-track-width-sm) - var(--k-switch-track-height-sm) - 2px);
 }
 
@@ -354,16 +359,16 @@ defineExpose({ focus });
 .k-switch:not(.is-checked) .k-switch__inner {
   padding-inline-start: var(--k-switch-track-height);
 }
-.k-switch--large.is-checked .k-switch__inner {
+.k-switch--lg.is-checked .k-switch__inner {
   padding-inline-end: var(--k-switch-track-height-lg);
 }
-.k-switch--large:not(.is-checked) .k-switch__inner {
+.k-switch--lg:not(.is-checked) .k-switch__inner {
   padding-inline-start: var(--k-switch-track-height-lg);
 }
-.k-switch--small.is-checked .k-switch__inner {
+.k-switch--sm.is-checked .k-switch__inner {
   padding-inline-end: var(--k-switch-track-height-sm);
 }
-.k-switch--small:not(.is-checked) .k-switch__inner {
+.k-switch--sm:not(.is-checked) .k-switch__inner {
   padding-inline-start: var(--k-switch-track-height-sm);
 }
 

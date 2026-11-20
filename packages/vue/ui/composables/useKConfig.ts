@@ -1,5 +1,8 @@
 import { computed, inject, provide, unref } from 'vue';
 import type { InjectionKey, MaybeRef, Ref } from 'vue';
+import type { KBreakpoint } from './useBreakpoint';
+
+export type KBreakpointOverrides = Partial<Record<KBreakpoint, number>>;
 
 /**
  * KConfigProvider 的注入面（规格 docs site /vue/ui/components/config-provider.md）：
@@ -20,6 +23,8 @@ export interface KConfigInput {
   defaults?: MaybeRef<Record<string, KComponentDefaults> | undefined>;
   /** 点击波纹全局开关（antd ConfigProvider.wave 同款形态） */
   wave?: MaybeRef<{ disabled?: boolean } | undefined>;
+  /** 自定义断点（theme.breakpoints）：JS 响应式 prop 与 platform.mobile 生成块共用 */
+  breakpoints?: MaybeRef<KBreakpointOverrides | undefined>;
 }
 
 export interface KConfig extends KConfigInput {
@@ -29,6 +34,7 @@ export interface KConfig extends KConfigInput {
   popupContainer: Ref<HTMLElement | (() => HTMLElement) | undefined>;
   defaults: Ref<Record<string, KComponentDefaults> | undefined>;
   wave: Ref<{ disabled?: boolean } | undefined>;
+  breakpoints: Ref<KBreakpointOverrides | undefined>;
 }
 
 const K_CONFIG_KEY: InjectionKey<KConfig> = Symbol('k-config');
@@ -41,6 +47,13 @@ export function provideKConfig(input: KConfigInput): KConfig {
     scheme: computed(() => unref(input.scheme) ?? parent?.scheme.value ?? 'auto'),
     popupContainer: computed(() => unref(input.popupContainer) ?? parent?.popupContainer.value),
     wave: computed(() => unref(input.wave) ?? parent?.wave.value),
+    breakpoints: computed(() => {
+      const own = unref(input.breakpoints);
+      const inherited = parent?.breakpoints.value;
+      if (!own) return inherited;
+      if (!inherited) return own;
+      return { ...inherited, ...own };
+    }),
     defaults: computed(() => {
       const own = unref(input.defaults);
       const inherited = parent?.defaults.value;

@@ -86,7 +86,7 @@ import type { CSSProperties } from 'vue';
 import { usePopupHost, useOverlayPosition, usePopupDismiss } from '../../composables/usePopup';
 import { KNode } from '../../utils/vnode';
 import type { KOverlayPlacement } from '../../utils/overlay';
-import type { KDropdownItem, KDropdownPart, KDropdownTrigger } from './types';
+import type { KDropdownItem, KDropdownPart, KDropdownSize, KDropdownTrigger } from './types';
 
 defineOptions({ name: 'KDropdown' });
 
@@ -103,6 +103,8 @@ interface KDropdownProps {
   closeOnSelect?: boolean;
   /** 菜单 a11y 名称 */
   menuLabel?: string;
+  /** 菜单尺寸；触发器尺寸由业务控件决定 */
+  size?: KDropdownSize;
   classNames?: Partial<Record<KDropdownPart, string>>;
   styles?: Partial<Record<KDropdownPart, CSSProperties>>;
 }
@@ -116,6 +118,7 @@ const props = withDefaults(defineProps<KDropdownProps>(), {
   disabled: false,
   closeOnSelect: true,
   menuLabel: undefined,
+  size: 'md',
 });
 
 const emit = defineEmits<{
@@ -373,7 +376,7 @@ const popupOn = {
 const popupAttrs = computed(() => ({
   id: popupId,
   'data-part': 'root',
-  class: [...popupClasses.value, 'k-dropdown', props.classNames?.root],
+  class: [...popupClasses.value, 'k-dropdown', `k-dropdown--${props.size}`, props.classNames?.root],
   'data-k-theme': popupTheme.value,
   'data-placement': actualPlacement.value,
   role: 'menu',
@@ -398,9 +401,11 @@ defineSlots<{
 .k-dropdown {
   --k-dropdown-bg: var(--k-color-bg-elevated);
   --k-dropdown-radius: var(--k-border-radius);
-  --k-dropdown-padding: var(--k-size-xxs);
-  --k-dropdown-item-height: var(--k-control-height);
-  --k-dropdown-min-width: 160px;
+  --k-dropdown-padding: var(--k-popup-padding);
+  --k-dropdown-item-height: var(--k-popup-item-height);
+  --k-dropdown-item-padding-x: var(--k-popup-item-padding-x);
+  --k-dropdown-font-size: var(--k-font-size);
+  --k-dropdown-min-width: calc(var(--k-size) * 10);
   --k-dropdown-max-width: calc(var(--k-size) * 56);
 
   z-index: var(--k-z-index-popup-base);
@@ -412,9 +417,19 @@ defineSlots<{
   background: var(--k-dropdown-bg);
   color: var(--k-color-text);
   font-family: inherit;
-  font-size: var(--k-font-size);
+  font-size: var(--k-dropdown-font-size);
   line-height: var(--k-line-height);
   box-shadow: var(--k-box-shadow-secondary);
+}
+.k-dropdown--sm {
+  --k-dropdown-item-height: var(--k-popup-item-height-sm);
+  --k-dropdown-font-size: var(--k-font-size-sm);
+  --k-dropdown-min-width: calc(var(--k-size) * 9);
+}
+.k-dropdown--lg {
+  --k-dropdown-item-height: var(--k-popup-item-height-lg);
+  --k-dropdown-font-size: var(--k-font-size-lg);
+  --k-dropdown-min-width: calc(var(--k-size) * 12);
 }
 .k-dropdown__item {
   display: flex;
@@ -423,7 +438,7 @@ defineSlots<{
   box-sizing: border-box;
   width: 100%;
   min-height: var(--k-dropdown-item-height);
-  padding: 0 var(--k-size-sm);
+  padding: 0 var(--k-dropdown-item-padding-x);
   border: 0;
   border-radius: calc(var(--k-dropdown-radius) - var(--k-size-xxs));
   background: transparent;

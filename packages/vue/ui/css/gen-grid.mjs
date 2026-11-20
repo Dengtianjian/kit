@@ -19,6 +19,7 @@ const lines = [
   ' * 规格 = docs site /vue/ui/components/grid.md；产物由同目录 gen-grid.mjs 生成，改阶梯请改脚本后重跑。',
   ' */',
   ...spanRules(''),
+  ...spanRules('xs-'),
 ];
 
 for (const [name, w] of bps) {

@@ -51,10 +51,12 @@ import { usePopupHost, useOverlayPosition, usePopupDismiss } from '../../composa
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 import type { KOverlayPlacement } from '../../utils/overlay';
+import type { KSize } from '../../utils/size';
 
 defineOptions({ name: 'KPopover' });
 
 type PopoverTrigger = 'hover' | 'focus' | 'click';
+export type KPopoverSize = Extract<KSize, 'sm' | 'md' | 'lg'>;
 
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
 export interface KPopoverRenderScope {
@@ -72,6 +74,7 @@ export interface KPopoverRenderScope {
   content: string | undefined;
   closable: boolean;
   arrow: boolean;
+  size: KPopoverSize;
   slots: ReturnType<typeof useSlots>;
 }
 
@@ -89,6 +92,8 @@ interface KPopoverProps {
   arrow?: boolean;
   /** 右上角关闭 X */
   closable?: boolean;
+  /** 卡片尺寸：字号、内边距、标题与关闭钮同步缩放 */
+  size?: KPopoverSize;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换（含 Teleport/Transition） */
   render?: KRenderFn<KPopoverRenderScope>;
   classNames?: { root?: string; title?: string; content?: string };
@@ -102,6 +107,7 @@ const props = withDefaults(defineProps<KPopoverProps>(), {
   mouseLeaveDelay: 0.1,
   arrow: true,
   closable: false,
+  size: 'md',
 });
 
 const emit = defineEmits<{
@@ -196,7 +202,7 @@ const popupOn = {
 const popupAttrs = computed(() => ({
   id: popupId,
   'data-part': 'root',
-  class: popupClasses.value,
+  class: [...popupClasses.value, `k-popover--${props.size}`],
   'data-k-theme': popupTheme.value,
   'data-placement': actualPlacement.value,
   role: 'dialog',
@@ -222,6 +228,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KPopo
     content: props.content,
     closable: props.closable,
     arrow: props.arrow,
+    size: props.size,
     slots,
   }),
 );
@@ -245,13 +252,32 @@ defineSlots<{
   --k-popover-color: var(--k-color-text);
   --k-popover-title-color: var(--k-color-text);
   --k-popover-radius: var(--k-border-radius-lg);
-  --k-popover-padding: var(--k-size);
+  --k-popover-padding: var(--k-size-sm);
+  --k-popover-font-size: var(--k-font-size);
+  --k-popover-title-size: var(--k-popup-title-size);
+  --k-popover-close-size: var(--k-font-size);
   --k-popover-min-width: calc(var(--k-size) * 15);
   --k-popover-max-width: calc(var(--k-size) * 40);
   --k-popover-arrow-size: 8px;
 
   z-index: var(--k-z-index-popup-base);
   font-family: inherit;
+}
+.k-popover--sm {
+  --k-popover-padding: var(--k-size-xs);
+  --k-popover-font-size: var(--k-font-size-sm);
+  --k-popover-title-size: var(--k-font-size);
+  --k-popover-close-size: var(--k-font-size-sm);
+  --k-popover-min-width: calc(var(--k-size) * 12);
+  --k-popover-max-width: calc(var(--k-size) * 32);
+}
+.k-popover--lg {
+  --k-popover-padding: var(--k-size);
+  --k-popover-font-size: var(--k-font-size-lg);
+  --k-popover-title-size: var(--k-font-size-lg);
+  --k-popover-close-size: var(--k-font-size-lg);
+  --k-popover-min-width: calc(var(--k-size) * 18);
+  --k-popover-max-width: calc(var(--k-size) * 48);
 }
 .k-popover-enter-active {
   animation: k-popover-zoom var(--k-motion-duration-fast) var(--k-motion-ease-out-cubic);
@@ -267,24 +293,25 @@ defineSlots<{
   background-color: var(--k-popover-bg);
   color: var(--k-popover-color);
   box-shadow: var(--k-box-shadow-secondary);
-  font-size: var(--k-font-size);
+  font-size: var(--k-popover-font-size);
   line-height: var(--k-line-height);
 }
 .k-popover__title {
   padding: var(--k-popover-padding) var(--k-popover-padding) 0;
   color: var(--k-popover-title-color);
-  font-weight: var(--k-font-weight-strong);
+  font-size: var(--k-popover-title-size);
+  font-weight: var(--k-popup-title-weight);
 }
 .k-popover__close {
   position: absolute;
-  top: var(--k-size-xs);
-  right: var(--k-size-xs);
+  top: var(--k-popover-padding);
+  right: var(--k-popover-padding);
   display: inline-flex;
   padding: var(--k-size-xxs);
   border: none;
   background: transparent;
   color: var(--k-color-text-tertiary);
-  font-size: var(--k-font-size);
+  font-size: var(--k-popover-close-size);
   cursor: pointer;
 }
 .k-popover__close:hover {

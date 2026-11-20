@@ -1,6 +1,6 @@
 import { computed, unref } from 'vue';
 import type { ComputedRef, MaybeRefOrGetter } from 'vue';
-import { getSharedBreakpoint } from './useBreakpoint';
+import { useBreakpoint } from './useBreakpoint';
 import type { KBreakpoint } from './useBreakpoint';
 
 /** 断点常量映射：缺档向低档回退（mobile-first），全缺则返回 undefined 交给组件缺省 */
@@ -73,13 +73,14 @@ export function useResponsiveValue<T>(
   source: MaybeRefOrGetter<KResponsiveValue<T> | undefined>,
   options?: { coerce?: (raw: string) => T },
 ): ComputedRef<T | undefined> {
+  const breakpoint = useBreakpoint();
   return computed(() => {
     const raw = typeof source === 'function' ? (source as () => KResponsiveValue<T> | undefined)() : unref(source);
     if (raw == null) return undefined;
     if (typeof raw === 'string' ? !isResponsiveString(raw) : !isResponsiveMap<T>(raw)) {
       return raw as T;
     }
-    const current = getSharedBreakpoint().current.value;
+    const current = breakpoint.current.value;
     return resolveResponsiveValue(raw, current, options?.coerce);
   });
 }

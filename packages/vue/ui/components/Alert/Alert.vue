@@ -11,6 +11,7 @@
     class="k-alert"
     :class="[
       `k-alert--${type}`,
+      `k-alert--${size}`,
       { 'k-alert--banner': banner, 'k-alert--with-description': Boolean(description || $slots.description) },
       classNames?.root,
     ]"
@@ -68,6 +69,7 @@
 <script setup lang="ts">
 import { computed, getCurrentInstance, ref, useSlots } from 'vue';
 import type { CSSProperties, VNode, VNodeChild } from 'vue';
+import type { KSize } from '../../utils/size';
 import { KNode } from '../../utils/vnode';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
@@ -75,6 +77,7 @@ import type { KRenderFn } from '../../composables/useCustomRender';
 defineOptions({ name: 'KAlert' });
 
 type AlertType = 'info' | 'success' | 'warning' | 'error';
+export type KAlertSize = Extract<KSize, 'sm' | 'md' | 'lg'>;
 type AlertPart = 'root' | 'icon' | 'content' | 'title' | 'description' | 'action' | 'close';
 
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
@@ -85,6 +88,7 @@ export interface KAlertRenderScope {
   showIcon: boolean;
   closable: boolean;
   banner: boolean;
+  size: KAlertSize;
   visible: boolean;
   rootAttrs: Record<string, unknown>;
   onClose: (e: MouseEvent) => void;
@@ -105,6 +109,8 @@ interface KAlertProps {
   open?: boolean;
   /** banner：贴边通告条（直角、通栏感由使用容器决定） */
   banner?: boolean;
+  /** 尺寸：字号、内边距、图标与关闭钮同步缩放 */
+  size?: KAlertSize;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换 */
   render?: KRenderFn<KAlertRenderScope>;
   classNames?: Partial<Record<AlertPart, string>>;
@@ -117,6 +123,7 @@ const props = withDefaults(defineProps<KAlertProps>(), {
   closable: false,
   open: true,
   banner: false,
+  size: 'md',
 });
 
 const emit = defineEmits<{
@@ -157,6 +164,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KAler
     showIcon: props.showIcon,
     closable: props.closable,
     banner: props.banner,
+    size: props.size,
     visible: visible.value,
     rootAttrs,
     onClose,
@@ -180,6 +188,10 @@ defineSlots<{
   --k-alert-icon-color: var(--k-color-info);
   --k-alert-radius: var(--k-border-radius-lg);
   --k-alert-padding: var(--k-size-sm) var(--k-size);
+  --k-alert-font-size: var(--k-font-size);
+  --k-alert-title-size: var(--k-font-size);
+  --k-alert-description-size: var(--k-popup-description-size);
+  --k-alert-close-size: var(--k-font-size);
   --k-alert-gap: var(--k-size-xs);
   --k-alert-close-color: var(--k-color-text-tertiary);
 
@@ -193,8 +205,22 @@ defineSlots<{
   background-color: var(--k-alert-bg);
   color: var(--k-color-text);
   font-family: inherit;
-  font-size: var(--k-font-size);
+  font-size: var(--k-alert-font-size);
   line-height: var(--k-line-height);
+}
+.k-alert--sm {
+  --k-alert-padding: var(--k-size-xs) var(--k-size-sm);
+  --k-alert-font-size: var(--k-font-size-sm);
+  --k-alert-title-size: var(--k-font-size);
+  --k-alert-close-size: var(--k-font-size-sm);
+}
+.k-alert--lg {
+  --k-alert-padding: var(--k-size) var(--k-size-md);
+  --k-alert-font-size: var(--k-font-size-lg);
+  --k-alert-title-size: var(--k-font-size-lg);
+  --k-alert-description-size: var(--k-font-size);
+  --k-alert-close-size: var(--k-font-size-lg);
+  --k-alert-gap: var(--k-size);
 }
 .k-alert *,
 .k-alert *::before,
@@ -233,17 +259,20 @@ defineSlots<{
   min-width: 0;
 }
 .k-alert__title {
+  font-size: var(--k-alert-title-size);
   word-break: break-word;
 }
 .k-alert--with-description .k-alert__title {
-  font-weight: var(--k-font-weight-strong);
+  font-weight: var(--k-popup-title-weight);
 }
 .k-alert--with-description .k-alert__icon {
-  font-size: var(--k-font-size-lg);
+  font-size: calc(var(--k-alert-font-size) * 1.15);
 }
 .k-alert__description {
   margin-top: var(--k-size-xxs);
   color: var(--k-color-text-secondary);
+  font-size: var(--k-alert-description-size);
+  line-height: var(--k-line-height);
   word-break: break-word;
 }
 .k-alert__action {
@@ -260,7 +289,7 @@ defineSlots<{
   border: none;
   background: transparent;
   color: var(--k-alert-close-color);
-  font-size: var(--k-font-size);
+  font-size: var(--k-alert-close-size);
   cursor: pointer;
   transition: color var(--k-motion-duration-fast) var(--k-motion-ease-in-out-cubic);
 }

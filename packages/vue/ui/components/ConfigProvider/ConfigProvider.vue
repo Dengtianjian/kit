@@ -100,5 +100,6 @@ provideKConfig({
   popupContainer: computed(() => props.popupContainer),
   defaults: computed(() => props.defaults),
   wave: computed(() => props.wave),
+  breakpoints: computed(() => themeResult.value?.config.breakpoints),
 });
 </script>

@@ -1203,7 +1203,9 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
   --k-datepicker-cols: 7;
 
   z-index: var(--k-z-index-dropdown);
+  box-sizing: border-box;
   width: var(--k-datepicker-panel-width);
+  padding: var(--k-popup-padding);
   background-color: var(--k-color-bg-elevated);
   border-radius: var(--k-border-radius);
   box-shadow: var(--k-box-shadow-secondary);

@@ -51,8 +51,8 @@ export const defaultSeed: KSeedToken = {
   lineWidth: 1,
   sizeUnit: 4,
   sizeStep: 4,
-  controlHeight: 38,
+  controlHeight: 34,
   motionUnit: 0.1,
   zIndexPopupBase: 1000,
-  neutralTint: 0.04,
+  neutralTint: 0.02,
 };

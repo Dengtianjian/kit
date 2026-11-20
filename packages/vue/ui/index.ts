@@ -74,7 +74,9 @@ export { default as KBadge } from "./components/Badge/Badge.vue";
 export { default as KCard } from "./components/Card/Card.vue";
 export { default as KCardAction } from "./components/Card/CardAction.vue";
 export { default as KEmpty } from "./components/Empty/Empty.vue";
+export { default as KSkeleton } from "./components/Skeleton/Skeleton.vue";
 export { default as KPagination } from "./components/Pagination/Pagination.vue";
+export { default as KVirtualList } from "./components/VirtualList/VirtualList.vue";
 export { default as KTable } from "./components/Table/Table.vue";
 export { default as KBreadcrumb } from "./components/Breadcrumb/Breadcrumb.vue";
 export { default as KBreadcrumbItem } from "./components/Breadcrumb/BreadcrumbItem.vue";
@@ -90,6 +92,17 @@ export { default as KAnchor } from "./components/Anchor/Anchor.vue";
 export { default as KDrawer } from "./components/Drawer/Drawer.vue";
 export { default as KNavBar } from "./components/NavBar/NavBar.vue";
 export { default as KTabBar } from "./components/TabBar/TabBar.vue";
+export { default as KProgress } from "./components/Progress/Progress.vue";
+export { default as KResult } from "./components/Result/Result.vue";
+export { default as KRate } from "./components/Rate/Rate.vue";
+export { default as KSlider } from "./components/Slider/Slider.vue";
+export { default as KMentions } from "./components/Mentions/Mentions.vue";
+export { default as KAutoComplete } from "./components/AutoComplete/AutoComplete.vue";
+export { default as KTimePicker } from "./components/TimePicker/TimePicker.vue";
+export { default as KCascader } from "./components/Cascader/Cascader.vue";
+export { default as KTreeSelect } from "./components/TreeSelect/TreeSelect.vue";
+export { default as KTransfer } from "./components/Transfer/Transfer.vue";
+export { default as KColorPicker } from "./components/ColorPicker/ColorPicker.vue";
 export { default as KNotification } from "./components/Notification/Notification.vue";
 export { default as KDatePicker } from "./components/DatePicker/DatePicker.vue";
 export { default as KDateRangePicker } from "./components/DateRangePicker/DateRangePicker.vue";
@@ -106,7 +119,7 @@ export type {
 export { default as KPreview } from "./components/Preview/Preview.vue";
 export type { KSelectOption, KSelectGroup, KSelectRenderScope } from "./components/Select/Select.vue";
 export type { KDividerRenderScope } from "./components/Divider/Divider.vue";
-export type { KTooltipRenderScope } from "./components/Tooltip/Tooltip.vue";
+export type { KTooltipRenderScope, KTooltipSize } from "./components/Tooltip/Tooltip.vue";
 export type { KSpaceRenderScope } from "./components/Space/Space.vue";
 export type { KFlexRenderScope } from "./components/Flex/Flex.vue";
 export type { KRowRenderScope } from "./components/Grid/Row.vue";
@@ -135,7 +148,7 @@ export type { KInputRenderScope } from "./components/Input/Input.vue";
 export type { KInputNumberRenderScope } from "./components/InputNumber/InputNumber.vue";
 export type { KFormRenderScope } from "./components/Form/Form.vue";
 export type { KFormItemRenderScope } from "./components/Form/FormItem.vue";
-export type { KAlertRenderScope } from "./components/Alert/Alert.vue";
+export type { KAlertRenderScope, KAlertSize } from "./components/Alert/Alert.vue";
 export type {
   KTagColor,
   KTagPresetColor,
@@ -152,6 +165,7 @@ export type {
 } from "./components/Badge/Badge.vue";
 export type { KCardRenderScope, KCardVariant } from "./components/Card/Card.vue";
 export type {
+  KBreadcrumbChildLink,
   KBreadcrumbItemOption,
   KBreadcrumbItemPart,
   KBreadcrumbPart,
@@ -174,6 +188,7 @@ export type {
 export type {
   KDropdownItem,
   KDropdownPart,
+  KDropdownSize,
   KDropdownTrigger,
 } from "./components/Dropdown/types";
 export type {
@@ -199,6 +214,78 @@ export type {
 } from "./components/Drawer/types";
 export type { KNavBarPart } from "./components/NavBar/types";
 export type { KTabBarItem, KTabBarPart } from "./components/TabBar/types";
+export type {
+  KProgressRenderScope,
+  KProgressSize,
+  KProgressStatus,
+  KProgressType,
+} from "./components/Progress/Progress.vue";
+export type { KResultRenderScope, KResultStatus } from "./components/Result/Result.vue";
+export type {
+  KRateRenderScope,
+  KRateSize,
+  KRateStatus,
+} from "./components/Rate/Rate.vue";
+export type {
+  KSliderMark,
+  KSliderRenderScope,
+  KSliderSize,
+  KSliderStatus,
+  KSliderTooltip,
+  KSliderValue,
+} from "./components/Slider/Slider.vue";
+export type {
+  KMentionsOption,
+  KMentionsRenderScope,
+  KMentionsSize,
+  KMentionsStatus,
+} from "./components/Mentions/Mentions.vue";
+export type {
+  KAutoCompleteOption,
+  KAutoCompleteRenderScope,
+  KAutoCompleteSize,
+  KAutoCompleteStatus,
+  KAutoCompleteVariant,
+} from "./components/AutoComplete/AutoComplete.vue";
+export type {
+  KTimePickerRenderScope,
+  KTimePickerSize,
+  KTimePickerStatus,
+  KTimePickerValue,
+} from "./components/TimePicker/TimePicker.vue";
+export type {
+  KCascaderExpandTrigger,
+  KCascaderRenderScope,
+  KCascaderSize,
+  KCascaderStatus,
+  KCascaderValue,
+} from "./components/Cascader/Cascader.vue";
+export type {
+  KTreeSelectRenderScope,
+  KTreeSelectSize,
+  KTreeSelectStatus,
+  KTreeSelectValue,
+} from "./components/TreeSelect/TreeSelect.vue";
+export type {
+  KTransferDirection,
+  KTransferItem,
+  KTransferRenderScope,
+  KTransferSize,
+  KTransferStatus,
+} from "./components/Transfer/Transfer.vue";
+export type {
+  KColorPickerRenderScope,
+  KColorPickerSize,
+  KColorPickerStatus,
+} from "./components/ColorPicker/ColorPicker.vue";
+export type {
+  KColorFormat,
+  KColorValue,
+  KHsvValue,
+} from "./utils/color";
+export type { KTreeOption, KTreePath, KTreeRow } from "./utils/tree";
+export type { KTimeParts } from "./utils/time";
+export type { KSkeletonAvatarOptions, KSkeletonParagraphOptions } from "./components/Skeleton/Skeleton.vue";
 export type {
   KTableColumn,
   KTableFilterState,
@@ -227,8 +314,8 @@ export type {
   KTableCellEditEvent,
 } from "./components/Table/Table.vue";
 export type { KSpinRenderScope } from "./components/Spin/Spin.vue";
-export type { KPopoverRenderScope } from "./components/Popover/Popover.vue";
-export type { KPopconfirmRenderScope } from "./components/Popconfirm/Popconfirm.vue";
+export type { KPopoverRenderScope, KPopoverSize } from "./components/Popover/Popover.vue";
+export type { KPopconfirmRenderScope, KPopconfirmSize } from "./components/Popconfirm/Popconfirm.vue";
 export type { KModalRenderScope } from "./components/Modal/Modal.vue";
 export type { KNotificationRenderScope } from "./components/Notification/Notification.vue";
 export type {
@@ -273,11 +360,13 @@ export type {
   KModalFuncProps,
   KModalHandle,
   KModalPlacement,
+  KModalSize,
 } from "./components/Modal/service";
 export type {
   KMessageApi,
   KMessageConfig,
   KMessageHandle,
+  KMessageSize,
   KMessageType,
 } from "./components/Message/service";
 export type {
@@ -288,5 +377,6 @@ export type {
   KNotificationHandle,
   KNotificationPlacement,
   KNotificationSemanticPart,
+  KNotificationSize,
   KNotificationType,
 } from "./components/Notification/service";

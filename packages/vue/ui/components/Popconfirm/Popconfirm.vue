@@ -22,12 +22,12 @@
       <span v-if="arrow" class="k-popconfirm__arrow" aria-hidden="true" />
       <div class="k-popconfirm__card">
         <div class="k-popconfirm__message">
-          <span class="k-popconfirm__icon" :class="`k-popconfirm__icon--${icon}`" aria-hidden="true">
-            <svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-              <path v-if="icon === 'warning'" d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8 4.8v4M8 11.1l.02 0" />
-              <path v-else d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8 7.3v3.8M8 4.9l.02 0" />
+          <div class="k-popconfirm__icon" :class="`k-popconfirm__icon--${icon}`" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor" fill-rule="evenodd" stroke="none">
+              <path v-if="icon === 'warning'" d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm-.9 3h1.8l-.3 4.7H7.4l-.3-4.7Zm.9 8.1a1.05 1.05 0 1 1 0-2.1 1.05 1.05 0 0 1 0 2.1Z" />
+              <path v-else d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8 4.4a1.05 1.05 0 1 1 0 2.1 1.05 1.05 0 0 1 0-2.1Zm-.9 3.1h1.8v4H7.1Z" />
             </svg>
-          </span>
+          </div>
           <div class="k-popconfirm__text">
             <slot>
               <div class="k-popconfirm__title">
@@ -40,8 +40,8 @@
           </div>
         </div>
         <div class="k-popconfirm__footer">
-          <KButton size="xs" @click="onCancel">{{ cancelText }}</KButton>
-          <KButton size="xs" :type="okType" :loading="okLoading" @click="onConfirm">{{ okText }}</KButton>
+          <KButton :size="buttonSize" @click="onCancel">{{ cancelText }}</KButton>
+          <KButton :size="buttonSize" :type="okType" :loading="okLoading" @click="onConfirm">{{ okText }}</KButton>
         </div>
       </div>
     </div>
@@ -58,8 +58,11 @@ import { usePopupHost, useOverlayPosition, usePopupDismiss } from '../../composa
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 import type { KOverlayPlacement } from '../../utils/overlay';
+import type { KSize } from '../../utils/size';
 
 defineOptions({ name: 'KPopconfirm' });
+
+export type KPopconfirmSize = Extract<KSize, 'sm' | 'md' | 'lg'>;
 
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
 export interface KPopconfirmRenderScope {
@@ -78,6 +81,7 @@ export interface KPopconfirmRenderScope {
   cancelText: string;
   okType: 'primary' | 'danger';
   okLoading: boolean;
+  size: KPopconfirmSize;
   setOpen: (v: boolean) => void;
   onConfirm: (e: MouseEvent) => void;
   onCancel: (e: MouseEvent) => void;
@@ -98,6 +102,8 @@ interface KPopconfirmProps {
   open?: boolean;
   disabled?: boolean;
   arrow?: boolean;
+  /** 卡片尺寸：字号、内边距、图标与操作按钮同步缩放 */
+  size?: KPopconfirmSize;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换（含 Teleport/Transition） */
   render?: KRenderFn<KPopconfirmRenderScope>;
   classNames?: { root?: string };
@@ -111,6 +117,7 @@ const props = withDefaults(defineProps<KPopconfirmProps>(), {
   cancelText: '取消',
   okType: 'primary',
   arrow: true,
+  size: 'md',
 });
 
 const emit = defineEmits<{
@@ -120,6 +127,7 @@ const emit = defineEmits<{
   'update:open': [open: boolean];
 }>();
 
+const buttonSize = computed<'xs' | 'md'>(() => (props.size === 'lg' ? 'md' : 'xs'));
 const innerOpen = ref(false);
 // Vue 对 Boolean prop 做 absent→false 强转，`props.open !== undefined` 判受控恒真；改查原始 vnode props
 const instance = getCurrentInstance()!;
@@ -178,7 +186,7 @@ const triggerOn = {
 };
 const popupAttrs = computed(() => ({
   'data-part': 'root',
-  class: popupClasses.value,
+  class: [...popupClasses.value, `k-popconfirm--${props.size}`],
   'data-k-theme': popupTheme.value,
   'data-placement': actualPlacement.value,
   role: 'dialog',
@@ -204,6 +212,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KPopc
     cancelText: props.cancelText,
     okType: props.okType,
     okLoading: props.okLoading,
+    size: props.size,
     setOpen,
     onConfirm,
     onCancel,
@@ -230,12 +239,34 @@ defineSlots<{
   --k-popconfirm-bg: var(--k-color-bg-elevated);
   --k-popconfirm-radius: var(--k-border-radius-lg);
   --k-popconfirm-padding: var(--k-size);
+  --k-popconfirm-font-size: var(--k-font-size-lg);
+  --k-popconfirm-title-size: calc(var(--k-font-size-lg) + 2px);
+  --k-popconfirm-description-size: var(--k-font-size-lg);
+  --k-popconfirm-icon-size: 22px;
+  --k-popconfirm-gap: 5px;
+  --k-popconfirm-action-gap: var(--k-size);
   --k-popconfirm-min-width: calc(var(--k-size) * 13);
   --k-popconfirm-max-width: calc(var(--k-size) * 24);
   --k-popconfirm-arrow-size: 8px;
 
   z-index: var(--k-z-index-popup-base);
   font-family: inherit;
+}
+.k-popconfirm--sm {
+  --k-popconfirm-padding: var(--k-size-sm);
+  --k-popconfirm-font-size: var(--k-font-size);
+  --k-popconfirm-title-size: var(--k-font-size-lg);
+  --k-popconfirm-description-size: var(--k-font-size);
+  --k-popconfirm-min-width: calc(var(--k-size) * 12);
+  --k-popconfirm-max-width: calc(var(--k-size) * 24);
+}
+.k-popconfirm--lg {
+  --k-popconfirm-padding: var(--k-size-md);
+  --k-popconfirm-font-size: calc(var(--k-font-size-lg) + 2px);
+  --k-popconfirm-title-size: var(--k-font-size-xl);
+  --k-popconfirm-description-size: calc(var(--k-font-size-lg) + 2px);
+  --k-popconfirm-min-width: calc(var(--k-size) * 18);
+  --k-popconfirm-max-width: calc(var(--k-size) * 32);
 }
 .k-popconfirm-enter-active {
   animation: k-popconfirm-zoom var(--k-motion-duration-fast) var(--k-motion-ease-out-cubic);
@@ -251,19 +282,20 @@ defineSlots<{
   border-radius: var(--k-popconfirm-radius);
   background-color: var(--k-popconfirm-bg);
   box-shadow: var(--k-box-shadow-secondary);
-  font-size: var(--k-font-size);
+  font-size: var(--k-popconfirm-font-size);
   line-height: var(--k-line-height);
 }
 .k-popconfirm__message {
   display: flex;
-  gap: var(--k-size-xs);
+  align-items: flex-start;
+  gap: var(--k-popconfirm-gap);
   color: var(--k-color-text);
 }
 .k-popconfirm__icon {
   flex: none;
   display: inline-flex;
-  margin-top: calc((var(--k-line-height) * var(--k-font-size) - 1em) / 2);
-  font-size: var(--k-font-size);
+  margin-top: calc((var(--k-line-height) * var(--k-popconfirm-font-size) - var(--k-popconfirm-icon-size)) / 2);
+  font-size: var(--k-popconfirm-icon-size);
 }
 .k-popconfirm__icon--warning {
   color: var(--k-color-warning);
@@ -273,16 +305,20 @@ defineSlots<{
 }
 .k-popconfirm__title {
   color: var(--k-color-text);
+  font-size: var(--k-popconfirm-title-size);
+  font-weight: var(--k-font-weight-base);
 }
 .k-popconfirm__description {
   margin-top: var(--k-size-xxs);
   color: var(--k-color-text-secondary);
+  font-size: var(--k-popconfirm-description-size);
+  line-height: var(--k-line-height);
 }
 .k-popconfirm__footer {
   display: flex;
   justify-content: flex-end;
-  gap: var(--k-size-xs);
-  margin-top: var(--k-popconfirm-padding);
+  gap: var(--k-popconfirm-gap);
+  margin-top: var(--k-popconfirm-action-gap);
 }
 
 /* 箭头：同 Popover——画在卡片之上 + clip 裁内半，tertiary 阴影接续卡片阴影线（实色浅底画在卡片下会被糊掉） */

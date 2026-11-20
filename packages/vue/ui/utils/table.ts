@@ -67,6 +67,8 @@ export interface KTableColumn<T = Record<string, unknown>> {
   ellipsis?: boolean;
   /** 真实溢出时用 KTooltip 显示全文 */
   ellipsisTooltip?: boolean;
+  /** 卡片模式：false 隐藏；title 标题；subtitle 副标题；缺省首列标题、其余为字段 */
+  stack?: false | 'title' | 'subtitle';
   classNames?: { cell?: string; header?: string };
   styles?: { cell?: CSSProperties; header?: CSSProperties };
 }
@@ -329,6 +331,34 @@ export function visibleLeaves<T>(
   };
   visit(columns, [], 0);
   return leaves;
+}
+
+/** 卡片模式的字段拆分：标题 / 副标题 / 键值字段 / 操作列 */
+export interface KTableStackColumns<T = Record<string, unknown>> {
+  title: KTableLeaf<T>[];
+  subtitle: KTableLeaf<T>[];
+  fields: KTableLeaf<T>[];
+  actions: KTableLeaf<T>[];
+}
+
+export function splitStackColumns<T>(
+  leaves: readonly KTableLeaf<T>[],
+): KTableStackColumns<T> {
+  const visible = leaves.filter(leaf => leaf.column.stack !== false);
+  const actions = visible.filter(leaf => Boolean(leaf.column.actions?.length));
+  const data = visible.filter(leaf => !leaf.column.actions?.length);
+  const explicitTitle = data.filter(leaf => leaf.column.stack === 'title');
+  /* 没有显式标题时取第一个非副标题列；全被标成副标题则不生成标题 */
+  const title = explicitTitle.length
+    ? explicitTitle
+    : data.filter(leaf => leaf.column.stack !== 'subtitle').slice(0, 1);
+  const titleKeys = new Set(title.map(leaf => leaf.key));
+  const subtitle = data.filter(leaf => leaf.column.stack === 'subtitle');
+  const subtitleKeys = new Set(subtitle.map(leaf => leaf.key));
+  const fields = data.filter(
+    leaf => !titleKeys.has(leaf.key) && !subtitleKeys.has(leaf.key),
+  );
+  return { title, subtitle, fields, actions };
 }
 
 export function buildHeaderRows<T>(

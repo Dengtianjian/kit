@@ -290,8 +290,9 @@ defineSlots<{
 .k-tag__content {
   overflow: hidden;
   text-overflow: ellipsis;
-  /* 行高必须容纳字形上下伸部，line-height:1 会把 g / j / p 的下伸裁掉 */
+  /* 行高必须容纳字形上下伸部，line-height:1 会把 g / j / p 的下伸裁掉；0.08em 做视觉居中 */
   line-height: var(--k-tag-line-height);
+  transform: translateY(0.08em);
 }
 /* 图标四向：DOM 上图标在内容前，用 order 调整位置 */
 .k-tag.is-icon-right .k-tag__icon {

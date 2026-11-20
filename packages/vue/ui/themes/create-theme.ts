@@ -36,26 +36,37 @@ const indent = (text: string) =>
 /** KButton → button（类名 = k-button，变量前缀 = --k-button-） */
 const componentBase = (name: string) => kebab(name.replace(/^K/, ''));
 
+/** 断点 → --k-screen-* 变量；md 同时决定 platform.mobile 生成块的媒体上限 */
+const DEFAULT_MD = 768;
+
 export function createTheme(config: ThemeConfig = {}): ThemeResult {
-  const { seed, map, alias, dark, platform, components } = config;
+  const { seed, map, alias, dark, platform, components, breakpoints } = config;
 
   const baseLines: string[] = [];
   if (seed) baseLines.push(...declarations(seed as Record<string, TokenValue>, 'seed-', true));
   if (map) baseLines.push(...declarations(map, '', false));
   if (alias) baseLines.push(...declarations(alias, '', false));
+  if (breakpoints) {
+    const screenLines = Object.entries(breakpoints)
+      .filter(([, v]) => typeof v === 'number' && Number.isFinite(v))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `  --k-screen-${k}: ${v}px;`);
+    baseLines.push(...screenLines);
+  }
 
   const darkLines: string[] = [];
   if (dark?.seed) darkLines.push(...declarations(dark.seed as Record<string, TokenValue>, 'seed-', true));
   if (dark?.alias) darkLines.push(...declarations(dark.alias, '', false));
 
   const mobileLines = platform?.mobile?.alias ? declarations(platform.mobile.alias, '', false) : [];
+  const mobileMax = (breakpoints?.md ?? DEFAULT_MD) - 1;
 
   const cssText = (scope = ':root') => {
     const parts: string[] = [];
     if (baseLines.length) parts.push(block(scope, baseLines));
     if (darkLines.length) parts.push(block(`${scope}[data-k-theme="dark"]`, darkLines));
     if (mobileLines.length)
-      parts.push(`@media (max-width: 767px) {\n${indent(block(scope, mobileLines))}\n}`);
+      parts.push(`@media (max-width: ${Math.max(0, mobileMax)}px) {\n${indent(block(scope, mobileLines))}\n}`);
     for (const [comp, vars] of Object.entries(components ?? {})) {
       const lines = declarations(vars, `${componentBase(comp)}-`, false);
       if (lines.length) parts.push(block(`${scope} .k-${componentBase(comp)}`, lines));

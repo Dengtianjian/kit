@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import type { CSSProperties, VNode } from 'vue';
+import type { KSize } from '../../utils/size';
 
 /**
  * notification 实例 API（挂 useKApp().notification，无全局静态），对齐 antd v6 API 面：
@@ -10,6 +11,7 @@ import type { CSSProperties, VNode } from 'vue';
  */
 
 export type KNotificationType = 'info' | 'success' | 'error' | 'warning';
+export type KNotificationSize = Extract<KSize, 'sm' | 'md' | 'lg'>;
 export type KNotificationPlacement =
   | 'top' | 'topLeft' | 'topRight' | 'bottom' | 'bottomLeft' | 'bottomRight';
 
@@ -31,6 +33,8 @@ export interface KNotificationConfig {
   /** @deprecated actions 的 v6 前旧名，下个大版本移除 */
   btn?: string | VNode;
   type?: KNotificationType;
+  /** 尺寸：字号、内边距、标题/描述与关闭钮同步缩放 */
+  size?: KNotificationSize;
   /** 覆盖类型图标；null = 无图标 */
   icon?: string | VNode | null;
   /** 自动关闭秒数；0 / false = 常驻（默认 4.5） */
@@ -59,6 +63,7 @@ export interface KNotificationGlobalConfig {
   bottom?: number;
   placement?: KNotificationPlacement;
   duration?: number | false;
+  size?: KNotificationSize;
   closeIcon?: string | VNode | null;
   showProgress?: boolean;
   pauseOnHover?: boolean;
@@ -128,7 +133,7 @@ export function createNotificationService(): KNotificationService {
       id: ++seq,
       key: config.key,
       placement: config.placement ?? g.placement ?? 'topRight',
-      config,
+      config: { ...config, size: config.size ?? g.size },
       duration: rawDuration === 0 || rawDuration === false ? false : rawDuration,
       showProgress: config.showProgress ?? g.showProgress ?? false,
       pauseOnHover: config.pauseOnHover ?? g.pauseOnHover ?? true,

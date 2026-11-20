@@ -214,3 +214,4 @@ kitPlugin(options?: KitPluginOptions)   // options 先保留，后续按需扩�
 4. **全量与子路径**：`kit/vue` 入口导出 `foundation/*`、`services/*`、`types/*`、`components/*`、`composables/*`；业务侧引组件既可以从 `kit/vue` 具名引入，也可以走子路径直接引 `.vue` 文件（后者更适合只用到一两个组件、不想把整个组件目录牵连进编译图的场景）。
 5. **组件命名**：Naive UI 相关一律 `Naive` 前缀（不是 `Native`），导出名与文件名一致（`Base/Space.vue` → `Space`）；新增组件时在 `packages/vue/components/index.ts` 补一行 `export { default as X } from "./X.vue"`（`.vue` 没有可枚举的具名导出，`export *` 用不了）。
 6. **不要在 kit 里 import 业务工程代码**，方向只能是业务 → kit。
+7. **测试与 CI**：`pnpm test` 跑 `node --test`（Node 22+ 原生类型擦除，`scripts/ts-resolve-loader.mjs` 补 extensionless 解析），用例放 `packages/vue/ui/__tests__/*.test.ts`；`pnpm ci` = 测试 + 主题漂移检查，`main` 推送/PR 由 `.github/workflows/ci.yml` 自动执行。组件交互（拖拽、焦点、动画）仍按需用真实浏览器 CDP 脚本验证。

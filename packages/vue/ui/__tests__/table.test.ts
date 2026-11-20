@@ -21,6 +21,7 @@ import {
   sortRows,
   sortTreeNodes,
   spanCellKey,
+  splitStackColumns,
 } from '../utils/table.ts';
 import type { KTableColumn } from '../utils/table.ts';
 import { buildPageItems, clampPage, totalPagesOf } from '../utils/pagination.ts';
@@ -517,4 +518,37 @@ test('tree sort only reorders siblings and keeps subtree together', () => {
 test('tree expandable keys include every level with children', () => {
   const nodes = buildTreeNodes(tree, 'children', row => row.id);
   assert.deepEqual(collectTreeExpandableKeys(nodes), ['a', 'a1']);
+});
+test('stack columns split title, subtitle, fields and actions', () => {
+  const columns: KTableColumn<Row>[] = [
+    { key: 'name', title: '名称' },
+    { key: 'score', title: '评分' },
+    { key: 'team', title: '团队', stack: 'subtitle' },
+    { key: 'ops', title: '操作', actions: [{ label: '查看' }] },
+    { key: 'secret', title: '隐藏', stack: false },
+  ];
+  const split = splitStackColumns(flattenLeafColumns(columns));
+  assert.deepEqual(split.title.map(leaf => leaf.key), ['name']);
+  assert.deepEqual(split.subtitle.map(leaf => leaf.key), ['team']);
+  assert.deepEqual(split.fields.map(leaf => leaf.key), ['score']);
+  assert.deepEqual(split.actions.map(leaf => leaf.key), ['ops']);
+});
+
+test('stack columns honor explicit titles and skip all-subtitle tables', () => {
+  const columns: KTableColumn<Row>[] = [
+    { key: 'a', title: 'A', stack: 'subtitle' },
+    { key: 'b', title: 'B' },
+    { key: 'c', title: 'C', stack: 'title' },
+    { key: 'd', title: 'D', stack: 'title' },
+  ];
+  const split = splitStackColumns(flattenLeafColumns(columns));
+  assert.deepEqual(split.title.map(leaf => leaf.key), ['c', 'd']);
+  assert.deepEqual(split.subtitle.map(leaf => leaf.key), ['a']);
+  assert.deepEqual(split.fields.map(leaf => leaf.key), ['b']);
+
+  const onlySubtitle = splitStackColumns(
+    flattenLeafColumns([{ key: 'a', title: 'A', stack: 'subtitle' }]),
+  );
+  assert.deepEqual(onlySubtitle.title, []);
+  assert.deepEqual(onlySubtitle.fields, []);
 });

@@ -1,6 +1,8 @@
 import type { Component, VNodeChild } from 'vue';
+import type { KSize } from '../../utils/size';
 
 export type KDropdownTrigger = 'hover' | 'click' | 'contextmenu';
+export type KDropdownSize = Extract<KSize, 'sm' | 'md' | 'lg'>;
 
 export type KDropdownPart =
   | 'trigger'

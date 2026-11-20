@@ -9,6 +9,7 @@
     class="k-notification"
     :class="[
       type ? `k-notification--${type}` : '',
+      `k-notification--${size}`,
       { 'is-hover-pause': pauseOnHover },
       classNames?.root,
     ]"
@@ -74,7 +75,7 @@ import type { CSSProperties, VNode, VNodeChild } from 'vue';
 import { KNode } from '../../utils/vnode';
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
-import type { KNotificationSemanticPart, KNotificationType } from './service';
+import type { KNotificationSemanticPart, KNotificationSize, KNotificationType } from './service';
 
 defineOptions({ name: 'KNotification' });
 
@@ -89,6 +90,7 @@ export interface KNotificationRenderScope {
   description: string | VNode | undefined;
   actions: string | VNode | undefined;
   type: KNotificationType | undefined;
+  size: KNotificationSize;
   icon: string | VNode | null | undefined;
   closable: boolean;
   closeIcon: string | VNode | null | undefined;
@@ -108,6 +110,8 @@ interface KNotificationProps {
   /** 底部操作区（antd v6 的 actions；旧名 btn 由 service 兼容转发） */
   actions?: string | VNode;
   type?: KNotificationType;
+  /** 尺寸：字号、内边距、标题/描述与关闭钮同步缩放 */
+  size?: KNotificationSize;
   /** 覆盖类型图标；null = 无图标 */
   icon?: string | VNode | null;
   closable?: boolean;
@@ -130,6 +134,7 @@ const props = withDefaults(defineProps<KNotificationProps>(), {
   showProgress: false,
   pauseOnHover: true,
   role: 'alert',
+  size: 'md',
 });
 
 const emit = defineEmits<{
@@ -160,6 +165,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KNoti
     description: props.description,
     actions: props.actions,
     type: props.type,
+    size: props.size,
     icon: props.icon,
     closable: props.closable,
     closeIcon: props.closeIcon,
@@ -189,6 +195,11 @@ defineSlots<{
   --k-notification-bg: var(--k-color-bg-elevated);
   --k-notification-radius: var(--k-border-radius-lg);
   --k-notification-padding: var(--k-size);
+  --k-notification-font-size: var(--k-font-size);
+  --k-notification-title-size: var(--k-popup-title-size);
+  --k-notification-description-size: var(--k-popup-description-size);
+  --k-notification-icon-size: var(--k-font-size);
+  --k-notification-close-size: var(--k-font-size);
   --k-notification-accent: var(--k-color-primary);
 
   position: relative;
@@ -204,9 +215,24 @@ defineSlots<{
   box-shadow: var(--k-box-shadow);
   color: var(--k-color-text);
   font-family: inherit;
-  font-size: var(--k-font-size);
+  font-size: var(--k-notification-font-size);
   line-height: var(--k-line-height);
   pointer-events: auto; /* 列表容器 pointer-events: none，卡片自身可交互 */
+}
+.k-notification--sm {
+  --k-notification-padding: var(--k-size-sm);
+  --k-notification-font-size: var(--k-font-size-sm);
+  --k-notification-title-size: var(--k-font-size);
+  --k-notification-icon-size: var(--k-font-size);
+  --k-notification-close-size: var(--k-font-size-sm);
+}
+.k-notification--lg {
+  --k-notification-padding: var(--k-size-md);
+  --k-notification-font-size: var(--k-font-size-lg);
+  --k-notification-title-size: var(--k-font-size-lg);
+  --k-notification-description-size: var(--k-font-size);
+  --k-notification-icon-size: var(--k-font-size-lg);
+  --k-notification-close-size: var(--k-font-size-lg);
 }
 .k-notification--success {
   --k-notification-accent: var(--k-color-success);
@@ -223,8 +249,9 @@ defineSlots<{
 .k-notification__icon {
   flex: none;
   display: inline-flex;
-  margin-top: calc((var(--k-line-height) * var(--k-font-size) - 1em) / 2);
+  margin-top: calc((var(--k-line-height) * var(--k-notification-font-size) - var(--k-notification-icon-size)) / 2);
   color: var(--k-notification-accent);
+  font-size: var(--k-notification-icon-size);
 }
 .k-notification__section {
   flex: auto;
@@ -232,11 +259,14 @@ defineSlots<{
 }
 .k-notification__title {
   color: var(--k-color-text);
-  font-weight: var(--k-font-weight-strong);
+  font-size: var(--k-notification-title-size);
+  font-weight: var(--k-popup-title-weight);
 }
 .k-notification__description {
   margin-top: var(--k-size-xxs);
   color: var(--k-color-text-secondary);
+  font-size: var(--k-notification-description-size);
+  line-height: var(--k-line-height);
 }
 .k-notification__actions {
   margin-top: var(--k-size-sm);
@@ -254,7 +284,7 @@ defineSlots<{
   border-radius: var(--k-border-radius);
   background: transparent;
   color: var(--k-color-text-tertiary);
-  font-size: var(--k-font-size);
+  font-size: var(--k-notification-close-size);
   cursor: pointer;
 }
 .k-notification__close:hover {

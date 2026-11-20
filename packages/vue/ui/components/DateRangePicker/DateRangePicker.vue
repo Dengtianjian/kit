@@ -1005,8 +1005,10 @@ defineExpose({
 .k-daterange__popup {
   --k-daterange-cell-h: 32px;
   z-index: var(--k-z-index-dropdown);
+  box-sizing: border-box;
   width: min(590px, calc(100vw - var(--k-size-lg)));
   max-height: 76vh;
+  padding: var(--k-popup-padding);
   overflow: auto;
   background-color: var(--k-color-bg-elevated);
   border-radius: var(--k-border-radius);

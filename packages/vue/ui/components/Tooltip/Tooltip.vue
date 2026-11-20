@@ -37,11 +37,13 @@ import { usePopupHost, useOverlayPosition, usePopupDismiss } from '../../composa
 import { useCustomRender } from '../../composables/useCustomRender';
 import type { KRenderFn } from '../../composables/useCustomRender';
 import type { KOverlayPlacement } from '../../utils/overlay';
+import type { KSize } from '../../utils/size';
 import { KNode } from '../../utils/vnode';
 
 defineOptions({ name: 'KTooltip' });
 
 type TooltipTrigger = 'hover' | 'focus' | 'click';
+export type KTooltipSize = Extract<KSize, 'sm' | 'md' | 'lg'>;
 
 /** headless scope：#render 插槽 / render prop 闭包参数；绑定包 spread 到自绘节点才继承逻辑 */
 export interface KTooltipRenderScope {
@@ -57,6 +59,7 @@ export interface KTooltipRenderScope {
   popupOn: Record<string, (e: Event) => void>;
   setOpen: (v: boolean) => void;
   content: string | VNode | undefined;
+  size: KTooltipSize;
   slots: ReturnType<typeof useSlots>;
 }
 
@@ -75,6 +78,8 @@ interface KTooltipProps {
   open?: boolean;
   disabled?: boolean;
   arrow?: boolean;
+  /** 气泡尺寸：字号与内边距同步缩放 */
+  size?: KTooltipSize;
   /** 自定义渲染闭包（#render 插槽优先）；提供时整件视觉输出被替换（含 Teleport/Transition） */
   render?: KRenderFn<KTooltipRenderScope>;
   classNames?: { root?: string };
@@ -87,6 +92,7 @@ const props = withDefaults(defineProps<KTooltipProps>(), {
   mouseEnterDelay: 0.1,
   mouseLeaveDelay: 0.1,
   arrow: true,
+  size: 'md',
 });
 
 const emit = defineEmits<{
@@ -178,7 +184,7 @@ const popupOn = {
 const popupAttrs = computed(() => ({
   id: tooltipId,
   'data-part': 'root',
-  class: popupClasses.value,
+  class: [...popupClasses.value, `k-tooltip--${props.size}`],
   'data-k-theme': popupTheme.value,
   'data-placement': actualPlacement.value,
   role: 'tooltip',
@@ -200,6 +206,7 @@ const { renderScope, hasCustomRender, renderPropOutlet } = useCustomRender<KTool
     popupOn,
     setOpen,
     content: props.content ?? props.title,
+    size: props.size,
     slots,
   }),
 );
@@ -221,13 +228,24 @@ defineSlots<{
   --k-tooltip-bg: var(--k-color-bg-spotlight);
   --k-tooltip-color: var(--k-color-text-light-solid);
   --k-tooltip-radius: var(--k-border-radius);
-  --k-tooltip-padding: var(--k-size-xs) var(--k-size);
-  --k-tooltip-font-size: var(--k-font-size-sm);
+  --k-tooltip-padding: var(--k-size-xxs) var(--k-size-xs);
+  --k-tooltip-font-size: var(--k-font-size);
+  --k-tooltip-max-width: calc(var(--k-size) * 32);
   --k-tooltip-arrow-size: 8px; /* 直角等边三角形半对角 = 边长/√2，外露 ≈5.7px 略探过 gap 4 贴住触发器 */
 
   z-index: var(--k-z-index-popup-base);
-  max-width: calc(var(--k-size) * 32);
+  max-width: var(--k-tooltip-max-width);
   font-family: inherit;
+}
+.k-tooltip--sm {
+  --k-tooltip-padding: 2px 6px;
+  --k-tooltip-font-size: var(--k-font-size-sm);
+  --k-tooltip-max-width: calc(var(--k-size) * 24);
+}
+.k-tooltip--lg {
+  --k-tooltip-padding: var(--k-size-xs) var(--k-size-sm);
+  --k-tooltip-font-size: var(--k-font-size-lg);
+  --k-tooltip-max-width: calc(var(--k-size) * 40);
 }
 .k-tooltip-enter-active {
   animation: k-tooltip-zoom var(--k-motion-duration-fast) var(--k-motion-ease-out-cubic);

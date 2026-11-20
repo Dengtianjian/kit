@@ -205,10 +205,10 @@ defineSlots<{
   background: var(--k-color-fill-quaternary);
 }
 .k-card--elevated {
-  box-shadow: var(--k-shadow-md, 0 4px 16px rgb(0 0 0 / 8%));
+  box-shadow: var(--k-box-shadow);
 }
 .k-card.is-hoverable:hover {
-  box-shadow: var(--k-shadow-md, 0 4px 16px rgb(0 0 0 / 8%));
+  box-shadow: var(--k-box-shadow);
 }
 .k-card--outlined.is-hoverable:hover {
   border-color: var(--k-color-primary-border-hover);
@@ -219,7 +219,7 @@ defineSlots<{
     border-color var(--k-motion-duration-fast) var(--k-motion-ease-in-out-cubic);
 }
 .k-card.is-hover-shadow:hover {
-  box-shadow: var(--k-shadow-md, 0 4px 16px rgb(0 0 0 / 8%));
+  box-shadow: var(--k-box-shadow);
 }
 .k-card--sm {
   --k-card-padding: var(--k-size);
@@ -274,6 +274,9 @@ defineSlots<{
   flex: none;
   color: var(--k-color-text-secondary);
   font-size: var(--k-font-size-sm);
+}
+.k-card__header + .k-card__body {
+  margin-block-start: calc(var(--k-card-padding-y) * -1);
 }
 .k-card__body {
   flex: auto;

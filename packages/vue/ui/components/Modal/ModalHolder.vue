@@ -7,6 +7,7 @@
     :content="it.props.content"
     :icon="iconFor(it)"
     :width="it.props.width"
+    :size="it.props.size"
     :mask="it.props.mask ?? true"
     :mask-closable="it.props.maskClosable ?? true"
     :keyboard="it.props.keyboard ?? true"

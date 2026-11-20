@@ -868,7 +868,7 @@ const MenuList = defineComponent({
   margin: 0 var(--k-size-xs);
 }
 .k-menu__popup {
-  --k-menu-item-height: var(--k-control-height-lg);
+  --k-menu-item-height: var(--k-popup-item-height);
   --k-menu-radius: var(--k-border-radius);
   --k-menu-popup-min-width: 160px;
 
@@ -878,7 +878,7 @@ const MenuList = defineComponent({
   min-width: var(--k-menu-popup-min-width);
   max-height: min(70vh, 480px);
   margin: 0;
-  padding: var(--k-size-xxs);
+  padding: var(--k-popup-padding);
   overflow-y: auto;
   border-radius: var(--k-border-radius);
   background: var(--k-color-bg-elevated);
@@ -892,5 +892,7 @@ const MenuList = defineComponent({
 .k-menu__popup .k-menu__item,
 .k-menu__popup .k-menu__submenu {
   width: 100%;
+  padding-inline-end: var(--k-popup-item-padding-x);
+  padding-inline-start: calc(var(--k-popup-item-padding-x) + var(--k-menu-indent, 0px));
 }
 </style>

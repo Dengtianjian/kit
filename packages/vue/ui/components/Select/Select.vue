@@ -424,14 +424,23 @@ const HEIGHT_VAR: Record<string, string> = {
   md: 'var(--k-control-height)',
   lg: 'var(--k-control-height-lg)',
 };
+const OPTION_HEIGHT_VAR: Record<string, string> = {
+  xs: 'var(--k-popup-item-height-sm)',
+  sm: 'var(--k-popup-item-height-sm)',
+  md: 'var(--k-popup-item-height)',
+  lg: 'var(--k-popup-item-height-lg)',
+};
 const popupStyle = computed<CSSProperties>(() => ({
   ...overlayStyle.value,
-  // Teleport 出口脱离根节点作用域：尺寸变量随弹层走，选项行高 = 触发器 − 4
+  // Teleport 出口脱离根节点作用域：尺寸变量随弹层走，选项行高统一走紧凑弹层档
   '--k-select-height': HEIGHT_VAR[props.size],
+  '--k-select-option-height': OPTION_HEIGHT_VAR[props.size],
   '--k-select-option-font-size':
     props.size === 'xs' || props.size === 'sm'
       ? 'var(--k-font-size-sm)'
-      : 'var(--k-input-font-size)',
+      : props.size === 'lg'
+        ? 'var(--k-font-size-lg)'
+        : 'var(--k-font-size)',
 }));
 function syncWidth() {
   const w = controlEl.value?.offsetWidth;
@@ -1087,7 +1096,7 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
   background-color: var(--k-color-bg-elevated);
   border-radius: var(--k-border-radius);
   box-shadow: var(--k-box-shadow-secondary);
-  padding: var(--k-size-xs) 0;
+  padding: var(--k-popup-padding);
   transform-origin: top;
 }
 .k-select__popup[data-placement='top'] {
@@ -1108,11 +1117,11 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
   to { opacity: 0; transform: scaleY(0); }
 }
 .k-select__header {
-  padding: var(--k-size-xs) var(--k-size-sm);
+  padding: var(--k-size-xs) var(--k-popup-item-padding-x);
   border-bottom: var(--k-line-width) solid var(--k-color-split);
 }
 .k-select__footer {
-  padding: var(--k-size-xs) var(--k-size-sm);
+  padding: var(--k-size-xs) var(--k-popup-item-padding-x);
   border-top: var(--k-line-width) solid var(--k-color-split);
 }
 .k-select__list-inner {
@@ -1135,20 +1144,20 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
 }
 .k-select__group {
   display: block;
-  padding: var(--k-size-xxs) var(--k-size-sm);
+  padding: var(--k-size-xxs) var(--k-popup-item-padding-x);
   font-size: var(--k-font-size-sm);
   color: var(--k-color-text-tertiary);
 }
-/* 选项行高 = 触发器 − 4（尺寸变量由 JS 随弹层注入，Teleport 不丢档） */
+/* 选项行高走紧凑弹层档（尺寸变量由 JS 随弹层注入，Teleport 不丢档） */
 .k-select__option {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--k-size-xs);
-  min-height: calc(var(--k-select-height, var(--k-control-height)) - var(--k-size-xxs));
-  /* seed line-height=2 会把小档行撑回触发器高：行高随档钉死，保证行 = 触发器 −4 */
-  line-height: calc(var(--k-select-height, var(--k-control-height)) - var(--k-size-xxs));
-  padding: 0 var(--k-size-sm);
+  min-height: var(--k-select-option-height, var(--k-popup-item-height));
+  line-height: var(--k-select-option-height, var(--k-popup-item-height));
+  padding: 0 var(--k-popup-item-padding-x);
+  border-radius: var(--k-border-radius-sm);
   font-size: var(--k-select-option-font-size, var(--k-input-font-size));
   color: var(--k-select-text-color, var(--k-color-text));
   cursor: pointer;
@@ -1180,7 +1189,7 @@ defineExpose({ focus, blur, open: () => setOpen(true), close: () => setOpen(fals
 }
 .k-select__empty {
   display: block;
-  padding: var(--k-size) var(--k-size-sm);
+  padding: var(--k-size) var(--k-popup-item-padding-x);
   text-align: center;
   color: var(--k-color-text-tertiary);
   font-size: var(--k-select-option-font-size, var(--k-input-font-size));

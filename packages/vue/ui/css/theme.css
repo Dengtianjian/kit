@@ -40,10 +40,10 @@
   --k-seed-line-width: 1;
   --k-seed-size-unit: 4;
   --k-seed-size-step: 4;
-  --k-seed-control-height: 38;
+  --k-seed-control-height: 34;
   --k-seed-motion-unit: 0.1;
   --k-seed-z-index-popup-base: 1000;
-  --k-seed-neutral-tint: 0.04;
+  --k-seed-neutral-tint: 0.02;
 
   /* ============================================================ Base：模式基线（§4.0/§7） */
   --k-color-text-base: light-dark(var(--k-seed-color-text-base), var(--k-seed-color-text-base-dark));
@@ -165,10 +165,10 @@
 :root,
 .k-config-provider {
   /* 灰阶 = text-base → bg-base 阶梯混合，dark 随两端 seed 自动翻转 */
-  --k-gray-1: color-mix(in oklab, var(--k-color-text-base) 3%, var(--k-color-bg-base));
-  --k-gray-2: color-mix(in oklab, var(--k-color-text-base) 5%, var(--k-color-bg-base));
-  --k-gray-3: color-mix(in oklab, var(--k-color-text-base) 7%, var(--k-color-bg-base));
-  --k-gray-4: color-mix(in oklab, var(--k-color-text-base) 15%, var(--k-color-bg-base));
+  --k-gray-1: color-mix(in oklab, var(--k-color-text-base) 1%, var(--k-color-bg-base));
+  --k-gray-2: color-mix(in oklab, var(--k-color-text-base) 2%, var(--k-color-bg-base));
+  --k-gray-3: color-mix(in oklab, var(--k-color-text-base) 4%, var(--k-color-bg-base));
+  --k-gray-4: color-mix(in oklab, var(--k-color-text-base) 8%, var(--k-color-bg-base));
   --k-gray-5: color-mix(in oklab, var(--k-color-text-base) 26%, var(--k-color-bg-base));
   --k-gray-6: color-mix(in oklab, var(--k-color-text-base) 43%, var(--k-color-bg-base));
   --k-gray-7: color-mix(in oklab, var(--k-color-text-base) 63%, var(--k-color-bg-base));
@@ -199,22 +199,22 @@
 
   --k-color-border: var(--k-neutral-4);
   --k-color-border-secondary: var(--k-neutral-3);
-  /* 分割线独立取值 α0.08（2026-11-17 二次调参：0.06 淡、0.15 重，取中间破格档；不并入 fill ladder） */
-  --k-color-split: color-mix(in oklab, var(--k-color-text-base), transparent 92%);
+  /* 分割线独立取值 α0.06（2026-11-20 随边框低段整体调浅） */
+  --k-color-split: color-mix(in oklab, var(--k-color-text-base), transparent 94%);
 
   /* 阴影三档 = 视觉规则 §6（antd 三层模板） */
   --k-box-shadow:
-    0 6px 16px 0 rgba(0, 0, 0, 0.08),
-    0 3px 6px -4px rgba(0, 0, 0, 0.12),
-    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+    0 6px 16px 0 rgba(0, 0, 0, 0.05),
+    0 3px 6px -4px rgba(0, 0, 0, 0.08),
+    0 9px 28px 8px rgba(0, 0, 0, 0.03);
   --k-box-shadow-secondary:
-    0 1px 2px -2px rgba(0, 0, 0, 0.16),
-    0 3px 6px 0 rgba(0, 0, 0, 0.12),
-    0 5px 12px 4px rgba(0, 0, 0, 0.09);
+    0 1px 2px -2px rgba(0, 0, 0, 0.1),
+    0 3px 6px 0 rgba(0, 0, 0, 0.07),
+    0 5px 12px 4px rgba(0, 0, 0, 0.05);
   --k-box-shadow-tertiary:
-    0 3px 6px -4px rgba(0, 0, 0, 0.12),
-    0 6px 16px 0 rgba(0, 0, 0, 0.08),
-    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+    0 3px 6px -4px rgba(0, 0, 0, 0.08),
+    0 6px 16px 0 rgba(0, 0, 0, 0.05),
+    0 9px 28px 8px rgba(0, 0, 0, 0.03);
 
   /* 主色光晕（§4.4） */
   --k-control-outline-width: 2px;
@@ -298,6 +298,16 @@
   --k-control-height-sm: max(24px, calc(var(--k-seed-control-height) * 1px - 4px));
   --k-control-height: calc(var(--k-seed-control-height) * 1px);
   --k-control-height-lg: calc(var(--k-seed-control-height) * 1px + 4px);
+
+  /* 弹层统一契约：4px 内容边距、8px 选项横向内边距、32px 基准行高 */
+  --k-popup-padding: var(--k-size-xxs);
+  --k-popup-item-height-sm: calc(var(--k-size) * 1.75);
+  --k-popup-item-height: calc(var(--k-size) * 2);
+  --k-popup-item-height-lg: calc(var(--k-size) * 2.25);
+  --k-popup-item-padding-x: var(--k-size-xs);
+  --k-popup-title-size: var(--k-font-size);
+  --k-popup-title-weight: var(--k-font-weight-heading);
+  --k-popup-description-size: var(--k-font-size-sm);
 
   --k-line-width: calc(var(--k-seed-line-width) * 1px);
   --k-line-type: solid;

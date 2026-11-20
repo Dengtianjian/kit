@@ -97,7 +97,7 @@
         <KSwitch
           :model-value="aspectRatio ? true : ratioLocked"
           :disabled="!!aspectRatio"
-          size="small"
+          size="sm"
           @update:model-value="onLockChange"
         />
         <span>锁定比例</span>

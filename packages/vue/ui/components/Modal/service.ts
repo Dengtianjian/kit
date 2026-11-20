@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import type { VNode } from 'vue';
+import type { KSize } from '../../utils/size';
 
 /**
  * 实例 API（拍板③：无全局静态，挂在 useKApp().modal 上）。
@@ -9,6 +10,7 @@ import type { VNode } from 'vue';
  */
 
 export type KModalFuncType = 'info' | 'success' | 'error' | 'warning';
+export type KModalSize = Extract<KSize, 'sm' | 'md' | 'lg'>;
 
 /** 九宫格屏幕落位：弹窗打开后停在视口哪一格（上/下排缘距 80、左/右列缘距 24、center 四边 20） */
 export type KModalPlacement =
@@ -28,6 +30,7 @@ export interface KModalFuncProps {
   /** 覆盖类型默认图标；传 null 关闭 */
   icon?: string | VNode | null;
   width?: number | string;
+  size?: KModalSize;
   mask?: boolean;
   maskClosable?: boolean;
   keyboard?: boolean;
