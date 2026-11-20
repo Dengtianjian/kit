@@ -5,9 +5,12 @@
     :class="[
       `k-steps--${direction}`,
       `k-steps--${size}`,
+      `k-steps--${variant}`,
       {
         'is-dot': variant === 'dot',
         'is-clickable': clickable,
+        'is-pulse': pulse,
+        'is-show-icon': showIcon,
       },
       classNames?.root,
     ]"
@@ -41,6 +44,12 @@ interface KStepsProps {
   variant?: KStepsVariant;
   /** 开启后步骤可点击切换；单项可用 clickable / disabled 覆盖 */
   clickable?: boolean;
+  /** 当前步骤呼吸动画 */
+  pulse?: boolean;
+  /** 最多展示的步骤数（含首尾与当前步），超出部分折叠为省略节点 */
+  max?: number;
+  /** 导航型 / 面板型是否展示序号或图标 */
+  showIcon?: boolean;
   classNames?: Partial<Record<StepsPart, string>>;
   styles?: Partial<Record<StepsPart, CSSProperties>>;
 }
@@ -51,6 +60,8 @@ const props = withDefaults(defineProps<KStepsProps>(), {
   size: 'md',
   variant: 'default',
   clickable: false,
+  pulse: true,
+  showIcon: false,
 });
 
 const emit = defineEmits<{ change: [index: number] }>();
@@ -114,20 +125,96 @@ const StepHost = defineComponent({
   },
 });
 
+const EllipsisHost = defineComponent({
+  name: 'KStepsEllipsis',
+  props: {
+    last: { type: Boolean, default: false },
+    arrow: { type: Boolean, default: false },
+  },
+  setup(hostProps) {
+    const arrow = () =>
+      h('span', { class: 'k-step__arrow', 'aria-hidden': 'true' }, [
+        h(
+          'svg',
+          {
+            viewBox: '0 0 24 24',
+            width: '1em',
+            height: '1em',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': 2,
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+          },
+          [h('path', { d: 'M11 4l3 8l-3 8' })],
+        ),
+      ]);
+    return () =>
+      h('div', { class: ['k-step', 'is-ellipsis'], 'aria-hidden': 'true' }, [
+        h('span', { class: ['k-step__icon', 'is-custom'] }, '···'),
+        hostProps.last ? null : h('span', { class: 'k-step__connector' }),
+        hostProps.arrow && !hostProps.last ? arrow() : null,
+      ]);
+  },
+});
+
+/** 限量展示：保留首尾与当前步，围绕当前步补足名额，其余折叠 */
+function visibleIndexes(total: number): number[] {
+  const all = Array.from({ length: total }, (_, i) => i);
+  const max = Math.floor(props.max ?? 0);
+  if (!max || max >= total || total <= 3) return all;
+
+  const limit = Math.max(3, max);
+  const focus = Math.min(total - 1, Math.max(0, current.value));
+  const keep = new Set<number>([0, total - 1, focus]);
+  let budget = limit - keep.size;
+  let left = focus - 1;
+  let right = focus + 1;
+  while (budget > 0 && (left > 0 || right < total - 1)) {
+    if (left > 0) {
+      keep.add(left);
+      left -= 1;
+      budget -= 1;
+    }
+    if (budget > 0 && right < total - 1) {
+      keep.add(right);
+      right += 1;
+      budget -= 1;
+    }
+  }
+  return [...keep].sort((a, b) => a - b);
+}
+
 const StepList = defineComponent({
   name: 'KStepsList',
   setup() {
     return () => {
       const nodes = flattenSteps((slots.default?.() ?? []) as VNode[]);
-      return nodes.map((node, index) => {
+      const entries: { node?: VNode; index?: number; key: string | number }[] = [];
+      let prev = -1;
+      for (const index of visibleIndexes(nodes.length)) {
+        if (prev >= 0 && index - prev > 1) entries.push({ key: `gap-${prev}-${index}` });
+        entries.push({ node: nodes[index], index, key: nodes[index].key ?? index });
+        prev = index;
+      }
+      return entries.map((entry, position) => {
+        const last = position === entries.length - 1;
+        if (!entry.node) {
+          return h(EllipsisHost, {
+            key: entry.key,
+            last,
+            arrow: props.variant === 'navigation',
+          });
+        }
+        const { node, index } = entry as { node: VNode; index: number };
         const rawClickable = (node.props as Record<string, unknown> | null)?.clickable;
         return h(StepHost, {
-          key: node.key ?? index,
+          key: entry.key,
           node,
           index,
           status: statusOf(index),
           current: index === current.value,
-          last: index === nodes.length - 1,
+          last,
           clickable:
             rawClickable === undefined ? props.clickable : boolProp(rawClickable, 'clickable'),
           variant: props.variant,
@@ -174,5 +261,45 @@ defineSlots<{
 .k-steps--horizontal {
   flex-direction: row;
   align-items: flex-start;
+}
+.k-step .k-step__icon {
+  --k-step-pulse-color: var(--k-color-primary);
+}
+.k-step.is-ellipsis .k-step__icon.is-custom {
+  color: var(--k-color-text-quaternary);
+  font-size: var(--k-step-title-size);
+  letter-spacing: 0.12em;
+}
+.k-step.is-error .k-step__icon {
+  --k-step-pulse-color: var(--k-color-error);
+}
+.k-steps.is-pulse .k-step.is-current .k-step__icon {
+  animation: k-step-breathe 2s var(--k-motion-ease-in-out-cubic) infinite;
+}
+.k-steps.is-pulse .k-step.is-current .k-step__icon.is-custom {
+  animation: k-step-breathe-plain 2s var(--k-motion-ease-in-out-cubic) infinite;
+}
+@keyframes k-step-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--k-step-pulse-color) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in oklab, var(--k-step-pulse-color) 0%, transparent);
+  }
+}
+@keyframes k-step-breathe-plain {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k-steps.is-pulse .k-step.is-current .k-step__icon {
+    animation: none;
+  }
 }
 </style>

@@ -2,7 +2,7 @@ import type { ComputedRef, InjectionKey } from 'vue';
 
 export type KStepStatus = 'wait' | 'process' | 'finish' | 'error';
 export type KStepsDirection = 'horizontal' | 'vertical';
-export type KStepsVariant = 'default' | 'dot';
+export type KStepsVariant = 'default' | 'dot' | 'navigation' | 'panel';
 export type KStepsSize = 'sm' | 'md' | 'lg';
 
 export interface KStepContext {
