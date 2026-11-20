@@ -89,6 +89,8 @@ export interface KTableHeaderCell<T = Record<string, unknown>> {
   isGroup: boolean;
   colSpan: number;
   rowSpan: number;
+  /** 该格在本行覆盖的起始叶子序号，用于补行首纵向分隔线 */
+  start: number;
   leafKey?: string;
 }
 
@@ -418,7 +420,8 @@ export function buildHeaderRows<T>(
 ): KTableHeaderCell<T>[][] {
   const depth = columnDepth(columns);
   const rows: KTableHeaderCell<T>[][] = Array.from({ length: depth }, () => []);
-  const visit = (list: readonly KTableColumn<T>[], row: number, path: string) => {
+  const visit = (list: readonly KTableColumn<T>[], row: number, path: string, start: number) => {
+    let offset = start;
     list.forEach((column, index) => {
       const cellPath = `${path}/${index}`;
       if (column.children?.length) {
@@ -428,8 +431,10 @@ export function buildHeaderRows<T>(
           isGroup: true,
           colSpan: leavesOf(column.children),
           rowSpan: 1,
+          start: offset,
         });
-        visit(column.children, row + 1, cellPath);
+        visit(column.children, row + 1, cellPath, offset);
+        offset += leavesOf(column.children);
         return;
       }
       rows[row].push({
@@ -438,11 +443,13 @@ export function buildHeaderRows<T>(
         isGroup: false,
         colSpan: 1,
         rowSpan: depth - row,
+        start: offset,
         leafKey: keyOfColumn(column),
       });
+      offset += 1;
     });
   };
-  visit(columns, 0, '');
+  visit(columns, 0, '', 0);
   return rows;
 }
 

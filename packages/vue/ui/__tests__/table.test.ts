@@ -238,6 +238,8 @@ test('header rows span grouped leaves and restate leaf keys', () => {
     ],
   );
   assert.deepEqual(rows[1].map((cell) => cell.leafKey), ['score', 'team']);
+  assert.deepEqual(rows[0].map((cell) => cell.start), [0, 1]);
+  assert.deepEqual(rows[1].map((cell) => cell.start), [1, 2]);
 });
 
 test('fixed offsets accept a stable key resolver', () => {

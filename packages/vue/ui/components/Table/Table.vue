@@ -140,7 +140,7 @@
                 @update:model-value="toggleAll"
               />
             </th>
-            <template v-for="cell in headerRow" :key="cell.path">
+            <template v-for="(cell, cellIndex) in headerRow" :key="cell.path">
               <th
                 v-if="isOverlayHeaderCell(cell)"
                 scope="col"
@@ -163,6 +163,12 @@
                   {
                     'is-draggable': columnDraggable && !cell.isGroup,
                     'is-resizable': columnResizable && !cell.isGroup,
+                    'is-head-row-start': isHeaderRowStart(
+                      cell,
+                      cellIndex,
+                      rowIndex,
+                      expandableEnabled || selectionEnabled,
+                    ),
                   },
                 ]"
                 :style="[headerCellStyle(cell, rowIndex), cell.column.styles?.header]"
@@ -380,7 +386,7 @@
                 </th>
               </template>
               <th
-                v-for="cell in overlayHeaderCells(headerRow, side)"
+                v-for="(cell, cellIndex) in overlayHeaderCells(headerRow, side)"
                 :key="cell.path"
                 scope="col"
                 :colspan="cell.colSpan > 1 ? cell.colSpan : undefined"
@@ -389,7 +395,17 @@
                 :class="[
                   cell.column.classNames?.header,
                   side === 'left' ? 'is-fixed-left' : 'is-fixed-right',
-                  { 'is-draggable': columnDraggable && !cell.isGroup },
+                  {
+                    'is-draggable': columnDraggable && !cell.isGroup,
+                    'is-head-row-start': isHeaderRowStart(
+                      cell,
+                      cellIndex,
+                      rowIndex,
+                      side === 'left' &&
+                        leadingInOverlay &&
+                        (expandableEnabled || selectionEnabled),
+                    ),
+                  },
                 ]"
                 :style="[overlayHeaderStyle(cell, rowIndex), cell.column.styles?.header]"
                 :aria-sort="cell.isGroup ? undefined : ariaSort(cell.leafKey)"
@@ -2647,6 +2663,16 @@ function headerFixedClass(cell: KTableHeaderCell<T>) {
     'is-fixed-right': side === 'right',
   };
 }
+/** 表头行首格：行首但不在第 0 列（被上层 rowSpan 占位）时补纵向分隔线 */
+function isHeaderRowStart(
+  cell: KTableHeaderCell<T>,
+  index: number,
+  rowIndex: number,
+  hasLeading: boolean,
+) {
+  if (index !== 0) return false;
+  return (cell.start ?? 0) > 0 || (rowIndex > 0 && hasLeading);
+}
 
 function cellText(column: KTableColumn<T>, row: T): string {
   const value = getCellValue(row, column.dataIndex);
@@ -4307,6 +4333,10 @@ defineSlots<{
 }
 /* 行首若干列被合并覆盖后，本行首格没有“前一个兄弟”，补回纵向分隔线 */
 .k-table.is-column-borders .k-table__cell.is-span-edge {
+  border-inline-start: var(--k-line-width) solid var(--k-table-line);
+}
+/* 表头从中间开始的行（上层 rowSpan 占掉前面的列），行首格补纵向分隔线 */
+.k-table.is-column-borders .k-table__head .k-table__cell.is-head-row-start {
   border-inline-start: var(--k-line-width) solid var(--k-table-line);
 }
 .k-table.is-sticky .k-table__cell--head {
