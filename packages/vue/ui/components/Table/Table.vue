@@ -19,6 +19,7 @@
         'has-editable': hasEditableColumns,
         'has-bottom-scrollbar': bottomBar.visible,
         'is-header-bottom': headerAtBottom,
+        'is-sticky-block': stickyBlockSupported,
         'is-page-sticky': pageStickyActive && !headerAtBottom,
         'is-page-sticky-bottom': pageStickyActive && headerAtBottom,
       },
@@ -269,7 +270,7 @@
               classNames?.row,
             ]"
             :data-row-key="rowKeyOf(entry.row)"
-            :style="styles?.row"
+            :style="[styles?.row, pinnedCellStyle(entry)]"
             @click="onRowClick(entry.row, entry.index, $event)"
             @pointerdown="onRowPointerDown(entry, $event)"
             @mouseenter="scheduleHover(rowKeyOf(entry.row))"
@@ -494,7 +495,7 @@
                     classNames?.row,
                   ]"
                   :data-row-key="rowKeyOf(entry.row)"
-                  :style="styles?.row"
+                  :style="[styles?.row, pinnedCellStyle(entry)]"
                   @click="onRowClick(entry.row, entry.index, $event)"
                   @mouseenter="scheduleHover(rowKeyOf(entry.row))"
                   @mouseleave="scheduleHover(null)"
@@ -2363,6 +2364,34 @@ const headerAtBottom = computed(() => props.headerPosition === 'bottom');
 const pageStickyActive = computed(
   () => props.pageSticky && props.scroll?.y == null && props.scroll?.x == null,
 );
+/** thead / tr 整块 sticky 能力：不支持时退回逐格 sticky */
+const stickyBlockSupported = ref(false);
+let stickyBlockCache: boolean | null = null;
+function probeStickyBlock(markup: string, selector: string) {
+  const host = document.createElement('div');
+  host.style.cssText =
+    'position: fixed; top: -10000px; left: -10000px; width: 160px; height: 80px; overflow: auto;';
+  host.innerHTML = markup;
+  document.body.appendChild(host);
+  host.scrollTop = 40;
+  const node = host.querySelector<HTMLElement>(selector);
+  const delta = node ? node.getBoundingClientRect().top - host.getBoundingClientRect().top : 999;
+  host.remove();
+  return Math.abs(delta) <= 1;
+}
+function detectStickyBlock() {
+  if (stickyBlockCache != null) return stickyBlockCache;
+  const thead = probeStickyBlock(
+    '<table style="width:100%;border-collapse:separate"><thead style="position:sticky;top:0"><tr><th style="height:20px"></th></tr></thead><tbody><tr><td style="height:300px"></td></tr></tbody></table>',
+    'th',
+  );
+  const row = probeStickyBlock(
+    '<table style="width:100%;border-collapse:separate"><tbody><tr style="position:sticky;top:0"><td style="height:20px"></td></tr><tr><td style="height:300px"></td></tr></tbody></table>',
+    'tr',
+  );
+  stickyBlockCache = thead && row;
+  return stickyBlockCache;
+}
 const rootStyle = computed<CSSProperties>(() => {
   const style: Record<string, string> = {
     '--k-table-head-height': `${headerHeight.value}px`,
@@ -2636,6 +2665,7 @@ function onWrapScroll() {
 }
 onMounted(async () => {
   await nextTick();
+  stickyBlockSupported.value = detectStickyBlock();
   measureLayout();
   if (
     props.defaultExpandAll &&
@@ -4771,6 +4801,30 @@ defineSlots<{
 }
 .k-table.has-scroll-bottom .k-table__row.is-pinned-bottom > .k-table__cell {
   box-shadow: 0 -6px 8px -6px rgb(0 0 0 / 18%);
+}
+/* 整块粘性：表头与固定行各作为一个 sticky 块，粘性元素从每格降到每块。
+   pageSticky 仍用 thead 自身的视口偏移；不支持 thead/tr sticky 时保留上面的逐格规则。 */
+.k-table.is-sticky-block.is-sticky .k-table__cell--head:not(.is-fixed) {
+  position: static;
+}
+.k-table.is-sticky-block.is-sticky:not(.is-page-sticky):not(.is-page-sticky-bottom) .k-table__head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+.k-table.is-sticky-block.is-sticky.is-header-bottom:not(.is-page-sticky):not(.is-page-sticky-bottom)
+  .k-table__head {
+  top: auto;
+  bottom: 0;
+}
+.k-table.is-sticky-block .k-table__row.is-pinned-top,
+.k-table.is-sticky-block .k-table__row.is-pinned-bottom {
+  position: sticky;
+  z-index: 2;
+}
+.k-table.is-sticky-block .k-table__row.is-pinned-top > .k-table__cell:not(.is-fixed),
+.k-table.is-sticky-block .k-table__row.is-pinned-bottom > .k-table__cell:not(.is-fixed) {
+  position: static;
 }
 .k-table .k-table__cell--expand {
   width: 44px;
