@@ -6,6 +6,9 @@
       :class="popupClasses"
       :data-k-theme="popupTheme"
       data-part="root"
+      @before-leave="freezeLeaving"
+      @leave-cancelled="releaseLeaving"
+      @after-leave="releaseLeaving"
     >
       <div
         v-for="it in svc.items.value"
@@ -32,8 +35,16 @@
           <template v-else-if="it.icon">
             <component :is="KNode" :node="it.icon" />
           </template>
-          <svg v-else viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-            <path :d="ICON_PATH[it.type]" />
+          <svg v-else viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.5" fill="currentColor" />
+            <path
+              :d="ICON_PATH[it.type]"
+              fill="none"
+              stroke="var(--k-message-bg)"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </span>
         <span
@@ -87,6 +98,42 @@ const ICON_PATH: Record<string, string> = {
   warning: `${CIRCLE}M8 4.8v4M8 11.1l.02 0`,
 };
 
+/** 离场条脱离文档流前钉住原位，剩余条目才能通过 FLIP 平滑补位 */
+function freezeLeaving(el: Element) {
+  const node = el as HTMLElement;
+  const list = node.parentElement;
+  const siblings = list
+    ? ([...list.children].filter((child) => child !== node) as HTMLElement[])
+    : [];
+  const before = siblings.map((sib) => sib.getBoundingClientRect().top);
+  const rect = node.getBoundingClientRect();
+  node.style.top = `${node.offsetTop}px`;
+  node.style.left = `${node.offsetLeft}px`;
+  node.style.width = `${rect.width}px`;
+  // 提前脱离文档流，剩余条目立即补位（FLIP）
+  node.style.position = 'absolute';
+  node.style.zIndex = '1';
+
+  siblings.forEach((sib, i) => {
+    const dy = before[i] - sib.getBoundingClientRect().top;
+    if (Math.abs(dy) < 0.5) return;
+    sib.style.transition = 'none';
+    sib.style.transform = `translateY(${dy}px)`;
+    sib.getBoundingClientRect();
+    sib.style.transition = '';
+    sib.style.transform = '';
+  });
+}
+
+function releaseLeaving(el: Element) {
+  const node = el as HTMLElement;
+  node.style.top = '';
+  node.style.left = '';
+  node.style.width = '';
+  node.style.position = '';
+  node.style.zIndex = '';
+}
+
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
 
 function syncTimers() {
@@ -124,7 +171,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--k-size); /* 条间隔 8→16（用户反馈太挤） */
+  gap: var(--k-size-sm);
   pointer-events: none;
   font-family: inherit;
 }
@@ -132,10 +179,10 @@ onBeforeUnmount(() => {
 .k-message {
   --k-message-bg: var(--k-color-bg-elevated);
   --k-message-radius: var(--k-border-radius-lg);
-  --k-message-pad: var(--k-size-sm) var(--k-size);
+  --k-message-pad: var(--k-size-sm) var(--k-size-md);
   --k-message-font-size: var(--k-font-size);
-  --k-message-icon-size: var(--k-font-size);
-  --k-message-gap: var(--k-size-xs);
+  --k-message-icon-size: calc(var(--k-font-size-lg) + 2px);
+  --k-message-gap: calc(var(--k-size-xs) - 2px);
 
   display: inline-flex;
   align-items: center;
@@ -149,18 +196,19 @@ onBeforeUnmount(() => {
   font-size: var(--k-message-font-size);
   line-height: var(--k-line-height);
   pointer-events: auto;
+  transition: transform var(--k-motion-duration-mid) var(--k-motion-ease-out-cubic);
   animation: k-message-in var(--k-motion-duration-mid) var(--k-motion-ease-out-cubic);
 }
 .k-message--sm {
-  --k-message-pad: var(--k-size-xs) var(--k-size-sm);
+  --k-message-pad: var(--k-size-xs) var(--k-size);
   --k-message-font-size: var(--k-font-size-sm);
-  --k-message-icon-size: var(--k-font-size-sm);
+  --k-message-icon-size: var(--k-font-size-lg);
 }
 .k-message--lg {
-  --k-message-pad: var(--k-size) var(--k-size-md);
+  --k-message-pad: var(--k-size) var(--k-size-lg);
   --k-message-font-size: var(--k-font-size-lg);
-  --k-message-icon-size: var(--k-font-size-lg);
-  --k-message-gap: var(--k-size-sm);
+  --k-message-icon-size: var(--k-font-size-xl);
+  --k-message-gap: calc(var(--k-size-sm) - 2px);
 }
 .k-message__icon {
   flex: none;
@@ -194,6 +242,8 @@ onBeforeUnmount(() => {
 }
 /* 离场：淡出 + 轻微上移；剩余条目由 TransitionGroup move 平滑补位 */
 .k-message-leave-active {
+  position: absolute;
+  z-index: 1;
   transition:
     opacity var(--k-motion-duration-fast) var(--k-motion-ease-in-cubic),
     transform var(--k-motion-duration-fast) var(--k-motion-ease-in-cubic);
