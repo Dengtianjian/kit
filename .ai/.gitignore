@@ -1,0 +1,5 @@
+# 只保留长期维护的清单，其余本地 AI 材料不入库
+*
+!.gitignore
+!TODO.md
+!COMPONENTS.md
